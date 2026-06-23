@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/cuffeyvidzro/leamout/internal/http/middleware"
+	"github.com/cuffeyvidzro/leamout/internal/modules/auth"
 	"github.com/gin-gonic/gin"
 )
 
@@ -21,6 +22,8 @@ func (s *Server) Router() *gin.Engine {
 	router.Use(middleware.RequestLogger(s.log))
 	router.Use(middleware.Secure(s.cfg.IsDevelopment()))
 	router.Use(middleware.CORS(s.cfg.CORSOrigins, s.cfg.IsDevelopment()))
+
+	auth.RegisterRoutes(router, s.authHandler())
 
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(nethttp.StatusOK, gin.H{

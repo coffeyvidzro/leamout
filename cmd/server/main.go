@@ -44,7 +44,7 @@ func main() {
 		}
 	}()
 
-	serverRegistry := apphttp.NewServer(cfg, log)
+	serverRegistry := apphttp.NewServer(cfg, log, postgresPool, redisClient)
 	router := serverRegistry.Router()
 
 	server := &http.Server{
