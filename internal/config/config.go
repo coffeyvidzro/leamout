@@ -1,0 +1,51 @@
+package config
+
+import (
+	"github.com/caarlos0/env/v10"
+	"github.com/joho/godotenv"
+)
+
+type QueueConfig struct {
+	Enabled    bool `env:"ENABLED" envDefault:"true"`
+	MaxWorkers int  `env:"MAX_WORKERS" envDefault:"10"`
+}
+
+type CronConfig struct {
+	Enabled  bool   `env:"ENABLED" envDefault:"true"`
+	Timezone string `env:"TIMEZONE" envDefault:"Africa/Accra"`
+}
+
+type OAuthConfig struct {
+	ClientID     string `env:"CLIENT_ID"`
+	ClientSecret string `env:"CLIENT_SECRET"`
+}
+
+type Config struct {
+	AppEnv      string   `env:"APP_ENV" envDefault:"development"`
+	HTTPPort    string   `env:"HTTP_PORT" envDefault:"8080"`
+	BaseURL     string   `env:"BASE_URL" envDefault:"http://localhost:8080"`
+	DatabaseURL string   `env:"DATABASE_URL" envDefault:"postgres://postgres:postgres@localhost:5432/leamout?sslmode=disable"`
+	RedisURL    string   `env:"REDIS_URL" envDefault:"redis://localhost:6379"`
+	CORSOrigins []string `env:"CORS_ORIGINS" envSeparator:"," envDefault:"http://localhost:3000,http://127.0.0.1:3000"`
+
+	Queue QueueConfig `envPrefix:"QUEUE_"`
+	Cron  CronConfig  `envPrefix:"CRON_"`
+
+	Google OAuthConfig `envPrefix:"GOOGLE_"`
+	Github OAuthConfig `envPrefix:"GITHUB_"`
+}
+
+func Load() (*Config, error) {
+	_ = godotenv.Load()
+
+	cfg := &Config{}
+	if err := env.Parse(cfg); err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
+}
+
+func (c *Config) IsDevelopment() bool {
+	return c.AppEnv == "development"
+}

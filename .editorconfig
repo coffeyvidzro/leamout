@@ -1,0 +1,18 @@
+# http://editorconfig.org
+root = true
+
+# 1. Global defaults (Hygiene)
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# 2. Web and General files (2-space indent)
+[*.{js,ts,tsx,jsx,json,md,mdx,yml,yaml,html,css}]
+indent_style = space
+indent_size = 2
+
+# 3. Go files (Override to tabs)
+[*.go]
+indent_style = tab
