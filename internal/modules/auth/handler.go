@@ -7,7 +7,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const sessionCookieMaxAge = 30 * 24 * 60 * 60
+const (
+	sessionCookieMaxAge = 30 * 24 * 60 * 60
+	oauthStateMaxAge    = 10 * 60
+)
 
 type Handler struct {
 	service     *Service
@@ -53,7 +56,7 @@ func (h *Handler) Logout(c *gin.Context) {
 }
 
 func (h *Handler) oauthLogin(c *gin.Context, provider string) {
-	redirectURL, err := h.service.Login(c.Request.Context(), provider)
+	state, err := h.service.NewOAuthState()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "failed to start " + provider + " login",
@@ -61,6 +64,15 @@ func (h *Handler) oauthLogin(c *gin.Context, provider string) {
 		return
 	}
 
+	redirectURL, err := h.service.OAuthURL(provider, state)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to start " + provider + " login",
+		})
+		return
+	}
+
+	h.setOAuthStateCookie(c, provider, state)
 	c.Redirect(http.StatusTemporaryRedirect, redirectURL)
 }
 
@@ -74,20 +86,20 @@ func (h *Handler) oauthCallback(c *gin.Context, provider string) {
 		})
 		return
 	}
+	if !h.validOAuthState(c, provider, state) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid oauth state",
+		})
+		return
+	}
 
-	response, token, err := h.service.CompleteOAuthLogin(c.Request.Context(), OAuthLoginRequest{
+	response, err := h.service.CompleteOAuthLogin(c.Request.Context(), OAuthLoginRequest{
 		Provider:  provider,
 		Code:      code,
 		State:     state,
 		UserAgent: c.GetHeader("User-Agent"),
 		IPAddress: c.ClientIP(),
 	})
-	if errors.Is(err, ErrInvalidOAuthState) {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid oauth state",
-		})
-		return
-	}
 	if errors.Is(err, ErrUnverifiedEmail) {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": "oauth email is not verified",
@@ -101,7 +113,8 @@ func (h *Handler) oauthCallback(c *gin.Context, provider string) {
 		return
 	}
 
-	h.setSessionCookie(c, token)
+	h.clearOAuthStateCookie(c, provider)
+	h.setSessionCookie(c, response.Session.Token)
 	c.JSON(http.StatusOK, response)
 }
 
@@ -111,4 +124,21 @@ func (h *Handler) setSessionCookie(c *gin.Context, token string) {
 
 func (h *Handler) clearSessionCookie(c *gin.Context) {
 	c.SetCookie(SessionCookieName, "", -1, "/", "", !h.development, true)
+}
+
+func (h *Handler) setOAuthStateCookie(c *gin.Context, provider, state string) {
+	c.SetCookie(oauthStateCookieName(provider), state, oauthStateMaxAge, "/", "", !h.development, true)
+}
+
+func (h *Handler) clearOAuthStateCookie(c *gin.Context, provider string) {
+	c.SetCookie(oauthStateCookieName(provider), "", -1, "/", "", !h.development, true)
+}
+
+func (h *Handler) validOAuthState(c *gin.Context, provider, state string) bool {
+	storedState, err := c.Cookie(oauthStateCookieName(provider))
+	return err == nil && storedState == state
+}
+
+func oauthStateCookieName(provider string) string {
+	return "leamout_oauth_state_" + provider
 }

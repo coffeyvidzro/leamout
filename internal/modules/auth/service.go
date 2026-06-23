@@ -3,20 +3,12 @@ package auth
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/cuffeyvidzro/leamout/internal/modules/auth/oauth"
-)
-
-const (
-	oauthStateTTL     = 10 * time.Minute
-	sessionTTL        = 30 * 24 * time.Hour
-	sessionTokenBytes = 32
+	"github.com/cuffeyvidzro/leamout/internal/modules/session"
 )
 
 var (
@@ -25,74 +17,54 @@ var (
 )
 
 type Service struct {
-	oauthRegistry *oauth.Registry
-	repository    Repository
-	stateStore    StateStore
+	repository     Repository
+	oauthRegistry  *oauth.Registry
+	sessionService *session.Service
 }
 
-func NewService(oauthRegistry *oauth.Registry, repository Repository, stateStore StateStore) *Service {
+func NewService(repository Repository, oauthRegistry *oauth.Registry, sessionService *session.Service) *Service {
 	return &Service{
-		oauthRegistry: oauthRegistry,
-		repository:    repository,
-		stateStore:    stateStore,
+		repository:     repository,
+		oauthRegistry:  oauthRegistry,
+		sessionService: sessionService,
 	}
 }
 
-func (s *Service) Login(ctx context.Context, providerName string) (string, error) {
+func (s *Service) NewOAuthState() (string, error) {
+	return newToken(32)
+}
+
+func (s *Service) OAuthURL(providerName, state string) (string, error) {
 	provider, err := s.oauthRegistry.Get(providerName)
 	if err != nil {
-		return "", err
-	}
-
-	state, err := newToken(32)
-	if err != nil {
-		return "", fmt.Errorf("create oauth state: %w", err)
-	}
-
-	if err := s.stateStore.SaveOAuthState(ctx, providerName, state, oauthStateTTL); err != nil {
 		return "", err
 	}
 
 	return provider.AuthURL(state), nil
 }
 
-func (s *Service) CompleteOAuthLogin(ctx context.Context, request OAuthLoginRequest) (*AuthResponse, string, error) {
+func (s *Service) CompleteOAuthLogin(ctx context.Context, request OAuthLoginRequest) (*AuthResponse, error) {
 	provider, err := s.oauthRegistry.Get(request.Provider)
 	if err != nil {
-		return nil, "", err
-	}
-
-	if err := s.stateStore.ConsumeOAuthState(ctx, request.Provider, request.State); err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	profile, err := provider.Exchange(ctx, request.Code)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	if !profile.EmailVerified {
-		return nil, "", ErrUnverifiedEmail
+		return nil, ErrUnverifiedEmail
 	}
 
-	user, err := s.userForProfile(ctx, profile)
+	user, err := s.repository.UpsertOAuthUser(ctx, profile)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
-	rawToken, err := newToken(sessionTokenBytes)
+	token, err := s.sessionService.CreateSession(ctx, user.ID, request.UserAgent, request.IPAddress)
 	if err != nil {
-		return nil, "", fmt.Errorf("create session token: %w", err)
-	}
-
-	session, err := s.repository.CreateSession(ctx, CreateSessionParams{
-		UserID:    user.ID,
-		TokenHash: HashSessionToken(rawToken),
-		UserAgent: request.UserAgent,
-		IPAddress: request.IPAddress,
-		ExpiresAt: time.Now().Add(sessionTTL),
-	})
-	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	return &AuthResponse{
@@ -105,68 +77,20 @@ func (s *Service) CompleteOAuthLogin(ctx context.Context, request OAuthLoginRequ
 			Status:        user.Status,
 		},
 		Session: AuthSession{
-			ID:        session.ID,
-			UserID:    session.UserID,
-			ExpiresAt: session.ExpiresAt,
-			CreatedAt: session.CreatedAt,
+			UserID: user.ID,
+			Token:  token,
 		},
-	}, rawToken, nil
+	}, nil
 }
 
-func (s *Service) Logout(ctx context.Context, rawToken string) error {
-	if rawToken == "" {
-		return nil
-	}
-	if err := s.repository.RevokeSessionByTokenHash(ctx, HashSessionToken(rawToken)); err != nil && !errors.Is(err, ErrSessionNotFound) {
-		return err
-	}
-
-	return nil
-}
-
-func (s *Service) userForProfile(ctx context.Context, profile *oauth.Profile) (*User, error) {
-	account, err := s.repository.FindAccount(ctx, profile.Provider, profile.ProviderUserID)
-	if err != nil {
-		return nil, err
-	}
-	if account != nil {
-		user, err := s.repository.FindUserByID(ctx, account.UserID)
-		if err != nil {
-			return nil, err
-		}
-		if user == nil {
-			return nil, ErrUserNotFound
-		}
-		return user, nil
-	}
-
-	user, err := s.repository.FindUserByEmail(ctx, profile.Email)
-	if err != nil {
-		return nil, err
-	}
-	if user == nil {
-		user, err = s.repository.CreateUser(ctx, profile)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	if _, err := s.repository.CreateAccount(ctx, user.ID, profile); err != nil {
-		return nil, err
-	}
-
-	return user, nil
-}
-
-func HashSessionToken(rawToken string) string {
-	sum := sha256.Sum256([]byte(rawToken))
-	return hex.EncodeToString(sum[:])
+func (s *Service) Logout(ctx context.Context, sessionToken string) error {
+	return s.sessionService.RevokeByToken(ctx, sessionToken)
 }
 
 func newToken(size int) (string, error) {
 	bytes := make([]byte, size)
 	if _, err := rand.Read(bytes); err != nil {
-		return "", err
+		return "", fmt.Errorf("read random bytes: %w", err)
 	}
 
 	return base64.RawURLEncoding.EncodeToString(bytes), nil

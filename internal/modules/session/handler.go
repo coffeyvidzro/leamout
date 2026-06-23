@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/cuffeyvidzro/leamout/internal/http/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -92,10 +91,11 @@ func (h *Handler) RevokeAll(c *gin.Context) {
 }
 
 func currentUserID(c *gin.Context) (uuid.UUID, bool) {
-	user, ok := middleware.CurrentUser(c)
+	value, ok := c.Get("userID")
 	if !ok {
 		return uuid.Nil, false
 	}
 
-	return user.ID, true
+	userID, ok := value.(uuid.UUID)
+	return userID, ok
 }

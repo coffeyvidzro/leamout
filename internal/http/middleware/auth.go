@@ -1,11 +1,14 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"time"
 
 	"github.com/cuffeyvidzro/leamout/internal/modules/auth"
+	"github.com/cuffeyvidzro/leamout/internal/modules/session"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 const (
@@ -14,7 +17,13 @@ const (
 	ContextUserID      = "userID"
 )
 
-func RequireAuth(repository auth.Repository) gin.HandlerFunc {
+type AuthRepository interface {
+	FindSessionByTokenHash(ctx context.Context, tokenHash string) (*auth.Session, error)
+	FindUserByID(ctx context.Context, id uuid.UUID) (*auth.User, error)
+	TouchSession(ctx context.Context, id uuid.UUID) error
+}
+
+func RequireAuth(repository AuthRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		rawToken, err := c.Cookie(auth.SessionCookieName)
 		if err != nil || rawToken == "" {
@@ -22,7 +31,7 @@ func RequireAuth(repository auth.Repository) gin.HandlerFunc {
 			return
 		}
 
-		session, err := repository.FindSessionByTokenHash(c.Request.Context(), auth.HashSessionToken(rawToken))
+		session, err := repository.FindSessionByTokenHash(c.Request.Context(), session.HashToken(rawToken))
 		if err != nil {
 			abortUnauthorized(c)
 			return

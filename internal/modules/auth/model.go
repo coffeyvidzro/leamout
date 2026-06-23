@@ -69,10 +69,11 @@ type AuthUser struct {
 }
 
 type AuthSession struct {
-	ID        uuid.UUID `json:"id"`
+	ID        uuid.UUID `json:"id,omitempty"`
 	UserID    uuid.UUID `json:"user_id"`
 	ExpiresAt time.Time `json:"expires_at"`
-	CreatedAt time.Time `json:"created_at"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+	Token     string    `json:"token,omitempty"`
 }
 
 type AuthResponse struct {

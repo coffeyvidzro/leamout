@@ -9,6 +9,7 @@ import (
 
 	"github.com/cuffeyvidzro/leamout/internal/modules/auth"
 	"github.com/cuffeyvidzro/leamout/internal/modules/auth/oauth"
+	"github.com/cuffeyvidzro/leamout/internal/modules/session"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -38,7 +39,7 @@ func TestRequireAuthSetsCurrentUserAndSession(t *testing.T) {
 	session := &auth.Session{
 		ID:        uuid.New(),
 		UserID:    user.ID,
-		TokenHash: auth.HashSessionToken(rawToken),
+		TokenHash: session.HashToken(rawToken),
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
 	repository := &authMiddlewareRepository{
@@ -60,7 +61,7 @@ func TestRequireAuthSetsCurrentUserAndSession(t *testing.T) {
 	}
 }
 
-func authTestRouter(repository auth.Repository) *gin.Engine {
+func authTestRouter(repository AuthRepository) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.GET("/protected", RequireAuth(repository), func(c *gin.Context) {
@@ -92,6 +93,10 @@ func (r *authMiddlewareRepository) FindUserByID(ctx context.Context, id uuid.UUI
 }
 
 func (r *authMiddlewareRepository) CreateUser(ctx context.Context, profile *oauth.Profile) (*auth.User, error) {
+	return nil, nil
+}
+
+func (r *authMiddlewareRepository) UpsertOAuthUser(ctx context.Context, profile *oauth.Profile) (*auth.User, error) {
 	return nil, nil
 }
 

@@ -72,6 +72,16 @@ type fakeRepository struct {
 	revokedAllUserID uuid.UUID
 }
 
+func (r *fakeRepository) Create(ctx context.Context, params CreateParams) (*Session, error) {
+	session := &Session{
+		ID:        uuid.New(),
+		UserID:    params.UserID,
+		TokenHash: params.TokenHash,
+		ExpiresAt: params.ExpiresAt,
+	}
+	return session, nil
+}
+
 func (r *fakeRepository) ListByUserID(ctx context.Context, userID uuid.UUID) ([]Session, error) {
 	r.listUserID = userID
 	return r.sessions, nil
@@ -94,5 +104,9 @@ func (r *fakeRepository) RevokeByID(ctx context.Context, userID, id uuid.UUID) e
 
 func (r *fakeRepository) RevokeAllByUserID(ctx context.Context, userID uuid.UUID) error {
 	r.revokedAllUserID = userID
+	return nil
+}
+
+func (r *fakeRepository) RevokeByTokenHash(ctx context.Context, tokenHash string) error {
 	return nil
 }

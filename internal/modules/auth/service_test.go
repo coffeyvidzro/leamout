@@ -6,14 +6,22 @@ import (
 	"time"
 
 	"github.com/cuffeyvidzro/leamout/internal/modules/auth/oauth"
+	"github.com/cuffeyvidzro/leamout/internal/modules/session"
 	"github.com/google/uuid"
 )
 
-func TestCompleteOAuthLoginCreatesUserAccountAndSession(t *testing.T) {
+func TestCompleteOAuthLoginUpsertsUserAndCreatesSession(t *testing.T) {
 	t.Parallel()
 
-	repo := newFakeRepository()
-	store := &fakeStateStore{states: map[string]bool{"google:state": true}}
+	userID := uuid.New()
+	authRepo := &fakeRepository{user: &User{
+		ID:            userID,
+		Name:          "Ada Lovelace",
+		Email:         "ada@example.com",
+		EmailVerified: true,
+		Status:        UserStatusActive,
+	}}
+	sessionRepo := &fakeSessionRepository{}
 	provider := &fakeProvider{profile: &oauth.Profile{
 		Provider:       oauth.ProviderGoogle,
 		ProviderUserID: "provider-user-id",
@@ -22,9 +30,9 @@ func TestCompleteOAuthLoginCreatesUserAccountAndSession(t *testing.T) {
 		Name:           "Ada Lovelace",
 		AvatarURL:      "https://example.com/avatar.png",
 	}}
-	service := NewService(oauth.NewRegistry(provider), repo, store)
+	service := NewService(authRepo, oauth.NewRegistry(provider), session.NewService(sessionRepo))
 
-	response, rawToken, err := service.CompleteOAuthLogin(context.Background(), OAuthLoginRequest{
+	response, err := service.CompleteOAuthLogin(context.Background(), OAuthLoginRequest{
 		Provider:  oauth.ProviderGoogle,
 		Code:      "code",
 		State:     "state",
@@ -34,55 +42,61 @@ func TestCompleteOAuthLoginCreatesUserAccountAndSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CompleteOAuthLogin() error = %v", err)
 	}
-	if rawToken == "" {
-		t.Fatal("expected raw session token")
-	}
 	if response.User.Email != "ada@example.com" {
 		t.Fatalf("response.User.Email = %q, want ada@example.com", response.User.Email)
 	}
-	if len(repo.accounts) != 1 {
-		t.Fatalf("created accounts = %d, want 1", len(repo.accounts))
+	if response.Session.Token == "" {
+		t.Fatal("expected session token")
 	}
-	if len(repo.sessions) != 1 {
-		t.Fatalf("created sessions = %d, want 1", len(repo.sessions))
+	if !authRepo.upserted {
+		t.Fatal("expected oauth user upsert")
 	}
-	if repo.sessions[0].TokenHash != HashSessionToken(rawToken) {
-		t.Fatal("session was not persisted with hashed raw token")
+	if sessionRepo.created == nil || sessionRepo.created.UserID != userID {
+		t.Fatal("expected session to be created for oauth user")
+	}
+	if sessionRepo.created.TokenHash != session.HashToken(response.Session.Token) {
+		t.Fatal("expected session token hash to be persisted")
 	}
 }
 
-func TestCompleteOAuthLoginRejectsInvalidState(t *testing.T) {
+func TestCompleteOAuthLoginRejectsUnverifiedEmail(t *testing.T) {
 	t.Parallel()
 
 	service := NewService(
-		oauth.NewRegistry(&fakeProvider{profile: &oauth.Profile{Provider: oauth.ProviderGoogle}}),
-		newFakeRepository(),
-		&fakeStateStore{states: map[string]bool{}},
+		&fakeRepository{},
+		oauth.NewRegistry(&fakeProvider{profile: &oauth.Profile{Provider: oauth.ProviderGoogle, EmailVerified: false}}),
+		session.NewService(&fakeSessionRepository{}),
 	)
 
-	_, _, err := service.CompleteOAuthLogin(context.Background(), OAuthLoginRequest{
+	_, err := service.CompleteOAuthLogin(context.Background(), OAuthLoginRequest{
 		Provider: oauth.ProviderGoogle,
 		Code:     "code",
-		State:    "missing",
 	})
-	if err != ErrInvalidOAuthState {
-		t.Fatalf("CompleteOAuthLogin() error = %v, want %v", err, ErrInvalidOAuthState)
+	if err != ErrUnverifiedEmail {
+		t.Fatalf("CompleteOAuthLogin() error = %v, want %v", err, ErrUnverifiedEmail)
 	}
 }
 
-func TestHashSessionTokenIsDeterministicAndDoesNotExposeRawToken(t *testing.T) {
+func TestNewOAuthStateAndOAuthURL(t *testing.T) {
 	t.Parallel()
 
-	first := HashSessionToken("session-token")
-	second := HashSessionToken("session-token")
-	if first != second {
-		t.Fatal("expected deterministic hash")
+	provider := &fakeProvider{profile: &oauth.Profile{Provider: oauth.ProviderGoogle}}
+	service := NewService(&fakeRepository{}, oauth.NewRegistry(provider), session.NewService(&fakeSessionRepository{}))
+
+	state, err := service.NewOAuthState()
+	if err != nil {
+		t.Fatalf("NewOAuthState() error = %v", err)
 	}
-	if first == "session-token" {
-		t.Fatal("expected hashed token to differ from raw token")
+	if state == "" {
+		t.Fatal("expected oauth state")
 	}
-	if len(first) != 64 {
-		t.Fatalf("hash length = %d, want 64", len(first))
+
+	url, err := service.OAuthURL(oauth.ProviderGoogle, state)
+	if err != nil {
+		t.Fatalf("OAuthURL() error = %v", err)
+	}
+	if url == "https://example.com?state=" {
+		t.Fatal("expected state in oauth URL")
 	}
 }
 
@@ -98,93 +112,41 @@ func (p *fakeProvider) Exchange(ctx context.Context, code string) (*oauth.Profil
 	return p.profile, nil
 }
 
-type fakeStateStore struct {
-	states map[string]bool
-}
-
-func (s *fakeStateStore) SaveOAuthState(ctx context.Context, provider, state string, ttl time.Duration) error {
-	s.states[provider+":"+state] = true
-	return nil
-}
-
-func (s *fakeStateStore) ConsumeOAuthState(ctx context.Context, provider, state string) error {
-	key := provider + ":" + state
-	if !s.states[key] {
-		return ErrInvalidOAuthState
-	}
-	delete(s.states, key)
-	return nil
-}
-
 type fakeRepository struct {
-	users    map[uuid.UUID]*User
-	emails   map[string]uuid.UUID
-	accounts map[string]*Account
-	sessions []*Session
-}
-
-func newFakeRepository() *fakeRepository {
-	return &fakeRepository{
-		users:    map[uuid.UUID]*User{},
-		emails:   map[string]uuid.UUID{},
-		accounts: map[string]*Account{},
-	}
+	user     *User
+	upserted bool
 }
 
 func (r *fakeRepository) FindUserByEmail(ctx context.Context, email string) (*User, error) {
-	id, ok := r.emails[email]
-	if !ok {
-		return nil, nil
-	}
-	return r.users[id], nil
+	return r.user, nil
 }
 
 func (r *fakeRepository) FindUserByID(ctx context.Context, id uuid.UUID) (*User, error) {
-	return r.users[id], nil
+	return r.user, nil
 }
 
 func (r *fakeRepository) CreateUser(ctx context.Context, profile *oauth.Profile) (*User, error) {
-	id := uuid.New()
-	avatarURL := profile.AvatarURL
-	user := &User{
-		ID:            id,
-		Name:          profile.Name,
-		Email:         profile.Email,
-		EmailVerified: profile.EmailVerified,
-		AvatarURL:     &avatarURL,
-		Status:        UserStatusActive,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
-	}
-	r.users[id] = user
-	r.emails[user.Email] = id
-	return user, nil
+	return r.user, nil
+}
+
+func (r *fakeRepository) UpsertOAuthUser(ctx context.Context, profile *oauth.Profile) (*User, error) {
+	r.upserted = true
+	return r.user, nil
 }
 
 func (r *fakeRepository) FindAccount(ctx context.Context, provider, providerUserID string) (*Account, error) {
-	return r.accounts[provider+":"+providerUserID], nil
+	return nil, nil
 }
 
 func (r *fakeRepository) CreateAccount(ctx context.Context, userID uuid.UUID, profile *oauth.Profile) (*Account, error) {
-	account := &Account{
-		ID:             uuid.New(),
-		UserID:         userID,
-		Provider:       profile.Provider,
-		ProviderUserID: profile.ProviderUserID,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
-	}
-	r.accounts[profile.Provider+":"+profile.ProviderUserID] = account
-	return account, nil
+	return nil, nil
+}
+
+func (r *fakeRepository) CreateSession(ctx context.Context, params CreateSessionParams) (*Session, error) {
+	return nil, nil
 }
 
 func (r *fakeRepository) FindSessionByTokenHash(ctx context.Context, tokenHash string) (*Session, error) {
-	for _, session := range r.sessions {
-		if session.TokenHash == tokenHash {
-			return session, nil
-		}
-	}
-
 	return nil, nil
 }
 
@@ -192,19 +154,44 @@ func (r *fakeRepository) TouchSession(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-func (r *fakeRepository) CreateSession(ctx context.Context, params CreateSessionParams) (*Session, error) {
-	session := &Session{
+func (r *fakeRepository) RevokeSessionByTokenHash(ctx context.Context, tokenHash string) error {
+	return nil
+}
+
+type fakeSessionRepository struct {
+	created   *session.CreateParams
+	revokedBy string
+}
+
+func (r *fakeSessionRepository) Create(ctx context.Context, params session.CreateParams) (*session.Session, error) {
+	r.created = &params
+	return &session.Session{
 		ID:        uuid.New(),
 		UserID:    params.UserID,
 		TokenHash: params.TokenHash,
 		ExpiresAt: params.ExpiresAt,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
-	}
-	r.sessions = append(r.sessions, session)
-	return session, nil
+	}, nil
 }
 
-func (r *fakeRepository) RevokeSessionByTokenHash(ctx context.Context, tokenHash string) error {
+func (r *fakeSessionRepository) ListByUserID(ctx context.Context, userID uuid.UUID) ([]session.Session, error) {
+	return nil, nil
+}
+
+func (r *fakeSessionRepository) GetByID(ctx context.Context, id uuid.UUID) (*session.Session, error) {
+	return nil, session.ErrNotFound
+}
+
+func (r *fakeSessionRepository) RevokeByID(ctx context.Context, userID, id uuid.UUID) error {
+	return nil
+}
+
+func (r *fakeSessionRepository) RevokeAllByUserID(ctx context.Context, userID uuid.UUID) error {
+	return nil
+}
+
+func (r *fakeSessionRepository) RevokeByTokenHash(ctx context.Context, tokenHash string) error {
+	r.revokedBy = tokenHash
 	return nil
 }

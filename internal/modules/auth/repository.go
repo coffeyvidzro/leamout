@@ -15,15 +15,7 @@ import (
 var ErrSessionNotFound = errors.New("session not found")
 
 type Repository interface {
-	FindUserByEmail(ctx context.Context, email string) (*User, error)
-	FindUserByID(ctx context.Context, id uuid.UUID) (*User, error)
-	CreateUser(ctx context.Context, profile *oauth.Profile) (*User, error)
-	FindAccount(ctx context.Context, provider, providerUserID string) (*Account, error)
-	CreateAccount(ctx context.Context, userID uuid.UUID, profile *oauth.Profile) (*Account, error)
-	CreateSession(ctx context.Context, session CreateSessionParams) (*Session, error)
-	FindSessionByTokenHash(ctx context.Context, tokenHash string) (*Session, error)
-	TouchSession(ctx context.Context, id uuid.UUID) error
-	RevokeSessionByTokenHash(ctx context.Context, tokenHash string) error
+	UpsertOAuthUser(ctx context.Context, profile *oauth.Profile) (*User, error)
 }
 
 type CreateSessionParams struct {
@@ -85,6 +77,40 @@ RETURNING id, name, email, email_verified, avatar_url, password_hash, status, cr
 	user, err := scanUser(r.pool.QueryRow(ctx, query, profile.Name, profile.Email, profile.EmailVerified, profile.AvatarURL))
 	if err != nil {
 		return nil, fmt.Errorf("create user: %w", err)
+	}
+
+	return user, nil
+}
+
+func (r *PostgresRepository) UpsertOAuthUser(ctx context.Context, profile *oauth.Profile) (*User, error) {
+	account, err := r.FindAccount(ctx, profile.Provider, profile.ProviderUserID)
+	if err != nil {
+		return nil, err
+	}
+	if account != nil {
+		user, err := r.FindUserByID(ctx, account.UserID)
+		if err != nil {
+			return nil, err
+		}
+		if user == nil {
+			return nil, ErrUserNotFound
+		}
+		return user, nil
+	}
+
+	user, err := r.FindUserByEmail(ctx, profile.Email)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		user, err = r.CreateUser(ctx, profile)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if _, err := r.CreateAccount(ctx, user.ID, profile); err != nil {
+		return nil, err
 	}
 
 	return user, nil

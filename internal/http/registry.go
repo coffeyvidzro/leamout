@@ -8,22 +8,19 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/modules/auth/oauth"
 	"github.com/cuffeyvidzro/leamout/internal/modules/session"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
 )
 
 type Server struct {
 	cfg      *config.Config
 	log      *slog.Logger
 	postgres *pgxpool.Pool
-	redis    *redis.Client
 }
 
-func NewServer(cfg *config.Config, log *slog.Logger, postgres *pgxpool.Pool, redis *redis.Client) *Server {
+func NewServer(cfg *config.Config, log *slog.Logger, postgres *pgxpool.Pool) *Server {
 	return &Server{
 		cfg:      cfg,
 		log:      log,
 		postgres: postgres,
-		redis:    redis,
 	}
 }
 
@@ -33,17 +30,18 @@ func (s *Server) authRepository() *auth.PostgresRepository {
 
 func (s *Server) authHandler() *auth.Handler {
 	repository := s.authRepository()
-	stateStore := auth.NewRedisStateStore(s.redis)
-	service := auth.NewService(s.oauthRegistry(), repository, stateStore)
+	service := auth.NewService(repository, s.oauthRegistry(), s.sessionService())
 
 	return auth.NewHandler(service, s.cfg.IsDevelopment())
 }
 
 func (s *Server) sessionHandler() *session.Handler {
-	repository := session.NewPostgresRepository(s.postgres)
-	service := session.NewService(repository)
+	return session.NewHandler(s.sessionService())
+}
 
-	return session.NewHandler(service)
+func (s *Server) sessionService() *session.Service {
+	repository := session.NewPostgresRepository(s.postgres)
+	return session.NewService(repository)
 }
 
 func (s *Server) oauthRegistry() *oauth.Registry {
