@@ -17,12 +17,12 @@ var (
 )
 
 type Service struct {
-	repository     Repository
+	repository     *Repository
 	oauthRegistry  *oauth.Registry
 	sessionService *session.Service
 }
 
-func NewService(repository Repository, oauthRegistry *oauth.Registry, sessionService *session.Service) *Service {
+func NewService(repository *Repository, oauthRegistry *oauth.Registry, sessionService *session.Service) *Service {
 	return &Service{
 		repository:     repository,
 		oauthRegistry:  oauthRegistry,

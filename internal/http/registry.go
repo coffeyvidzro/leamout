@@ -27,8 +27,8 @@ func NewServer(cfg *config.Config, log *slog.Logger, postgres *pgxpool.Pool, red
 	}
 }
 
-func (s *Server) authRepository() *auth.PostgresRepository {
-	return auth.NewPostgresRepository(s.postgres)
+func (s *Server) authRepository() *auth.Repository {
+	return auth.NewRepository(s.postgres)
 }
 
 func (s *Server) authHandler() *auth.Handler {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/cuffeyvidzro/leamout/internal/modules/auth/oauth"
@@ -14,10 +15,6 @@ import (
 
 var ErrSessionNotFound = errors.New("session not found")
 
-type Repository interface {
-	UpsertOAuthUser(ctx context.Context, profile *oauth.Profile) (*User, error)
-}
-
 type CreateSessionParams struct {
 	UserID    uuid.UUID
 	TokenHash string
@@ -26,38 +23,62 @@ type CreateSessionParams struct {
 	ExpiresAt time.Time
 }
 
-type PostgresRepository struct {
-	pool *pgxpool.Pool
+type Repository struct {
+	dbPool *pgxpool.Pool
 }
 
-func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
-	return &PostgresRepository{pool: pool}
+func NewRepository(dbPool *pgxpool.Pool) *Repository {
+	return &Repository{dbPool: dbPool}
 }
 
-func (r *PostgresRepository) FindUserByEmail(ctx context.Context, email string) (*User, error) {
-	const query = `
-SELECT id, name, email, email_verified, avatar_url, password_hash, status, created_at, updated_at
-FROM users
-WHERE email = $1`
-
-	user, err := scanUser(r.pool.QueryRow(ctx, query, email))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
+func (r *Repository) UpsertOAuthUser(ctx context.Context, profile *oauth.Profile) (*AuthUser, error) {
+	tx, err := r.dbPool.Begin(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("find user by email: %w", err)
+		return nil, err
+	}
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			slog.Default().Error("error rolling back transaction", slog.Any("error", err))
+		}
+	}()
+
+	user, err := getUserByAccount(ctx, tx, profile.Provider, profile.ProviderUserID)
+	if err == nil {
+		if err := upsertAccount(ctx, tx, user.ID, profile); err != nil {
+			return nil, err
+		}
+		return user, tx.Commit(ctx)
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
 	}
 
-	return user, nil
+	user, err = getUserByEmail(ctx, tx, profile.Email)
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return nil, err
+		}
+
+		user, err = createOAuthUser(ctx, tx, profile)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if err := upsertAccount(ctx, tx, user.ID, profile); err != nil {
+		return nil, err
+	}
+
+	return user, tx.Commit(ctx)
 }
 
-func (r *PostgresRepository) FindUserByID(ctx context.Context, id uuid.UUID) (*User, error) {
+func (r *Repository) FindUserByID(ctx context.Context, id uuid.UUID) (*User, error) {
 	const query = `
 SELECT id, name, email, email_verified, avatar_url, password_hash, status, created_at, updated_at
 FROM users
-WHERE id = $1`
+WHERE id = $1 AND status <> 'deleted'`
 
-	user, err := scanUser(r.pool.QueryRow(ctx, query, id))
+	user, err := scanUser(r.dbPool.QueryRow(ctx, query, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -68,106 +89,13 @@ WHERE id = $1`
 	return user, nil
 }
 
-func (r *PostgresRepository) CreateUser(ctx context.Context, profile *oauth.Profile) (*User, error) {
-	const query = `
-INSERT INTO users (name, email, email_verified, avatar_url)
-VALUES ($1, $2, $3, NULLIF($4, ''))
-RETURNING id, name, email, email_verified, avatar_url, password_hash, status, created_at, updated_at`
-
-	user, err := scanUser(r.pool.QueryRow(ctx, query, profile.Name, profile.Email, profile.EmailVerified, profile.AvatarURL))
-	if err != nil {
-		return nil, fmt.Errorf("create user: %w", err)
-	}
-
-	return user, nil
-}
-
-func (r *PostgresRepository) UpsertOAuthUser(ctx context.Context, profile *oauth.Profile) (*User, error) {
-	account, err := r.FindAccount(ctx, profile.Provider, profile.ProviderUserID)
-	if err != nil {
-		return nil, err
-	}
-	if account != nil {
-		user, err := r.FindUserByID(ctx, account.UserID)
-		if err != nil {
-			return nil, err
-		}
-		if user == nil {
-			return nil, ErrUserNotFound
-		}
-		return user, nil
-	}
-
-	user, err := r.FindUserByEmail(ctx, profile.Email)
-	if err != nil {
-		return nil, err
-	}
-	if user == nil {
-		user, err = r.CreateUser(ctx, profile)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	if _, err := r.CreateAccount(ctx, user.ID, profile); err != nil {
-		return nil, err
-	}
-
-	return user, nil
-}
-
-func (r *PostgresRepository) FindAccount(ctx context.Context, provider, providerUserID string) (*Account, error) {
-	const query = `
-SELECT id, user_id, provider, provider_user_id, created_at, updated_at
-FROM accounts
-WHERE provider = $1 AND provider_user_id = $2`
-
-	account, err := scanAccount(r.pool.QueryRow(ctx, query, provider, providerUserID))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("find account: %w", err)
-	}
-
-	return account, nil
-}
-
-func (r *PostgresRepository) CreateAccount(ctx context.Context, userID uuid.UUID, profile *oauth.Profile) (*Account, error) {
-	const query = `
-INSERT INTO accounts (user_id, provider, provider_user_id)
-VALUES ($1, $2, $3)
-RETURNING id, user_id, provider, provider_user_id, created_at, updated_at`
-
-	account, err := scanAccount(r.pool.QueryRow(ctx, query, userID, profile.Provider, profile.ProviderUserID))
-	if err != nil {
-		return nil, fmt.Errorf("create account: %w", err)
-	}
-
-	return account, nil
-}
-
-func (r *PostgresRepository) CreateSession(ctx context.Context, params CreateSessionParams) (*Session, error) {
-	const query = `
-INSERT INTO sessions (user_id, token_hash, user_agent, ip_address, expires_at, last_seen_at)
-VALUES ($1, $2, NULLIF($3, ''), NULLIF($4, ''), $5, NOW())
-RETURNING id, user_id, token_hash, user_agent, ip_address, expires_at, revoked_at, last_seen_at, created_at, updated_at`
-
-	session, err := scanSession(r.pool.QueryRow(ctx, query, params.UserID, params.TokenHash, params.UserAgent, params.IPAddress, params.ExpiresAt))
-	if err != nil {
-		return nil, fmt.Errorf("create session: %w", err)
-	}
-
-	return session, nil
-}
-
-func (r *PostgresRepository) FindSessionByTokenHash(ctx context.Context, tokenHash string) (*Session, error) {
+func (r *Repository) FindSessionByTokenHash(ctx context.Context, tokenHash string) (*Session, error) {
 	const query = `
 SELECT id, user_id, token_hash, user_agent, ip_address, expires_at, revoked_at, last_seen_at, created_at, updated_at
 FROM sessions
 WHERE token_hash = $1`
 
-	session, err := scanSession(r.pool.QueryRow(ctx, query, tokenHash))
+	session, err := scanSession(r.dbPool.QueryRow(ctx, query, tokenHash))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -178,34 +106,72 @@ WHERE token_hash = $1`
 	return session, nil
 }
 
-func (r *PostgresRepository) TouchSession(ctx context.Context, id uuid.UUID) error {
+func (r *Repository) TouchSession(ctx context.Context, id uuid.UUID) error {
 	const query = `
 UPDATE sessions
 SET last_seen_at = NOW()
 WHERE id = $1`
 
-	if _, err := r.pool.Exec(ctx, query, id); err != nil {
+	if _, err := r.dbPool.Exec(ctx, query, id); err != nil {
 		return fmt.Errorf("touch session: %w", err)
 	}
 
 	return nil
 }
 
-func (r *PostgresRepository) RevokeSessionByTokenHash(ctx context.Context, tokenHash string) error {
+func getUserByAccount(ctx context.Context, tx pgx.Tx, provider, providerUserID string) (*AuthUser, error) {
 	const query = `
-UPDATE sessions
-SET revoked_at = NOW()
-WHERE token_hash = $1 AND revoked_at IS NULL`
+SELECT u.id, u.name, u.email, u.email_verified, u.avatar_url, u.status
+FROM accounts a
+JOIN users u ON u.id = a.user_id
+WHERE a.provider = $1 AND a.provider_user_id = $2 AND u.status <> 'deleted'`
 
-	result, err := r.pool.Exec(ctx, query, tokenHash)
-	if err != nil {
-		return fmt.Errorf("revoke session: %w", err)
-	}
-	if result.RowsAffected() == 0 {
-		return ErrSessionNotFound
+	return scanAuthUser(tx.QueryRow(ctx, query, provider, providerUserID))
+}
+
+func getUserByEmail(ctx context.Context, tx pgx.Tx, email string) (*AuthUser, error) {
+	const query = `
+SELECT id, name, email, email_verified, avatar_url, status
+FROM users
+WHERE email = $1 AND status <> 'deleted'`
+
+	return scanAuthUser(tx.QueryRow(ctx, query, email))
+}
+
+func createOAuthUser(ctx context.Context, tx pgx.Tx, profile *oauth.Profile) (*AuthUser, error) {
+	const query = `
+INSERT INTO users (name, email, email_verified, avatar_url)
+VALUES (COALESCE(NULLIF($1, ''), $2), $2, $3, NULLIF($4, ''))
+RETURNING id, name, email, email_verified, avatar_url, status`
+
+	return scanAuthUser(tx.QueryRow(ctx, query, profile.Name, profile.Email, profile.EmailVerified, profile.AvatarURL))
+}
+
+func upsertAccount(ctx context.Context, tx pgx.Tx, userID uuid.UUID, profile *oauth.Profile) error {
+	const query = `
+INSERT INTO accounts (user_id, provider, provider_user_id)
+VALUES ($1, $2, $3)
+ON CONFLICT (provider, provider_user_id)
+DO UPDATE SET user_id = EXCLUDED.user_id`
+
+	_, err := tx.Exec(ctx, query, userID, profile.Provider, profile.ProviderUserID)
+	return err
+}
+
+func scanAuthUser(row pgx.Row) (*AuthUser, error) {
+	var user AuthUser
+	if err := row.Scan(
+		&user.ID,
+		&user.Name,
+		&user.Email,
+		&user.EmailVerified,
+		&user.AvatarURL,
+		&user.Status,
+	); err != nil {
+		return nil, err
 	}
 
-	return nil
+	return &user, nil
 }
 
 func scanUser(row pgx.Row) (*User, error) {
@@ -225,22 +191,6 @@ func scanUser(row pgx.Row) (*User, error) {
 	}
 
 	return &user, nil
-}
-
-func scanAccount(row pgx.Row) (*Account, error) {
-	var account Account
-	if err := row.Scan(
-		&account.ID,
-		&account.UserID,
-		&account.Provider,
-		&account.ProviderUserID,
-		&account.CreatedAt,
-		&account.UpdatedAt,
-	); err != nil {
-		return nil, err
-	}
-
-	return &account, nil
 }
 
 func scanSession(row pgx.Row) (*Session, error) {
