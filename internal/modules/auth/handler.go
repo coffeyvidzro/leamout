@@ -94,7 +94,7 @@ func (h *Handler) oauthCallback(c *gin.Context, provider string) {
 		return
 	}
 
-	response, err := h.service.CompleteOAuthLogin(c.Request.Context(), OAuthLoginRequest{
+	response, token, err := h.service.CompleteOAuthLogin(c.Request.Context(), OAuthLoginRequest{
 		Provider:  provider,
 		Code:      code,
 		State:     state,
@@ -115,7 +115,7 @@ func (h *Handler) oauthCallback(c *gin.Context, provider string) {
 	}
 
 	h.clearOAuthStateCookie(c, provider)
-	h.setSessionCookie(c, response.Session.Token)
+	h.setSessionCookie(c, token)
 	c.JSON(http.StatusOK, response)
 }
 

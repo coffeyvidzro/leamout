@@ -16,7 +16,6 @@ var ErrNotFound = errors.New("session not found")
 
 type CreateParams struct {
 	UserID    uuid.UUID
-	RawToken  string
 	TokenHash string
 	UserAgent string
 	IPAddress string

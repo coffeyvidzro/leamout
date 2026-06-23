@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	SessionCookieName = "session_id"
+	SessionCookieName = "lmt-session"
 	SessionContextKey = "auth.session"
 	ContextUserID     = "userID"
 )

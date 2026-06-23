@@ -13,7 +13,6 @@ import (
 
 var (
 	ErrUnverifiedEmail = errors.New("oauth profile email is not verified")
-	ErrUserNotFound    = errors.New("user not found")
 )
 
 type Service struct {
@@ -43,28 +42,28 @@ func (s *Service) OAuthURL(providerName, state string) (string, error) {
 	return provider.AuthURL(state), nil
 }
 
-func (s *Service) CompleteOAuthLogin(ctx context.Context, request OAuthLoginRequest) (*AuthResponse, error) {
+func (s *Service) CompleteOAuthLogin(ctx context.Context, request OAuthLoginRequest) (*AuthResponse, string, error) {
 	provider, err := s.oauthRegistry.Get(request.Provider)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	profile, err := provider.Exchange(ctx, request.Code)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if !profile.EmailVerified {
-		return nil, ErrUnverifiedEmail
+		return nil, "", ErrUnverifiedEmail
 	}
 
 	user, err := s.repository.UpsertOAuthUser(ctx, profile)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	token, err := s.sessionService.CreateSession(ctx, user.ID, request.UserAgent, request.IPAddress)
+	token, sess, err := s.sessionService.CreateSession(ctx, user.ID, request.UserAgent, request.IPAddress)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	return &AuthResponse{
@@ -77,10 +76,12 @@ func (s *Service) CompleteOAuthLogin(ctx context.Context, request OAuthLoginRequ
 			Status:        user.Status,
 		},
 		Session: AuthSession{
-			UserID: user.ID,
-			Token:  token,
+			ID:        sess.ID,
+			UserID:    sess.UserID,
+			ExpiresAt: sess.ExpiresAt,
+			CreatedAt: sess.CreatedAt,
 		},
-	}, nil
+	}, token, nil
 }
 
 func (s *Service) Logout(ctx context.Context, sessionToken string) error {

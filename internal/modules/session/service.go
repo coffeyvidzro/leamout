@@ -25,24 +25,24 @@ func NewService(repository *Repository) *Service {
 	return &Service{repository: repository}
 }
 
-func (s *Service) CreateSession(ctx context.Context, userID uuid.UUID, userAgent, ipAddress string) (string, error) {
+func (s *Service) CreateSession(ctx context.Context, userID uuid.UUID, userAgent, ipAddress string) (string, *Session, error) {
 	rawToken, err := newToken(sessionTokenBytes)
 	if err != nil {
-		return "", fmt.Errorf("create session token: %w", err)
+		return "", nil, fmt.Errorf("create session token: %w", err)
 	}
 
-	if _, err := s.repository.Create(ctx, CreateParams{
+	createdSession, err := s.repository.Create(ctx, CreateParams{
 		UserID:    userID,
-		RawToken:  rawToken,
 		TokenHash: HashToken(rawToken),
 		UserAgent: userAgent,
 		IPAddress: ipAddress,
 		ExpiresAt: time.Now().Add(sessionTTL),
-	}); err != nil {
-		return "", err
+	})
+	if err != nil {
+		return "", nil, err
 	}
 
-	return rawToken, nil
+	return rawToken, createdSession, nil
 }
 
 func (s *Service) GetByToken(ctx context.Context, rawToken string) (*Session, error) {
