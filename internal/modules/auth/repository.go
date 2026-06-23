@@ -3,25 +3,13 @@ package auth
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
-	"time"
 
 	"github.com/cuffeyvidzro/leamout/internal/modules/auth/oauth"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-var ErrSessionNotFound = errors.New("session not found")
-
-type CreateSessionParams struct {
-	UserID    uuid.UUID
-	TokenHash string
-	UserAgent string
-	IPAddress string
-	ExpiresAt time.Time
-}
 
 type Repository struct {
 	dbPool *pgxpool.Pool
@@ -70,53 +58,6 @@ func (r *Repository) UpsertOAuthUser(ctx context.Context, profile *oauth.Profile
 	}
 
 	return user, tx.Commit(ctx)
-}
-
-func (r *Repository) FindUserByID(ctx context.Context, id uuid.UUID) (*User, error) {
-	const query = `
-SELECT id, name, email, email_verified, avatar_url, password_hash, status, created_at, updated_at
-FROM users
-WHERE id = $1 AND status <> 'deleted'`
-
-	user, err := scanUser(r.dbPool.QueryRow(ctx, query, id))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("find user by id: %w", err)
-	}
-
-	return user, nil
-}
-
-func (r *Repository) FindSessionByTokenHash(ctx context.Context, tokenHash string) (*Session, error) {
-	const query = `
-SELECT id, user_id, token_hash, user_agent, ip_address, expires_at, revoked_at, last_seen_at, created_at, updated_at
-FROM sessions
-WHERE token_hash = $1`
-
-	session, err := scanSession(r.dbPool.QueryRow(ctx, query, tokenHash))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("find session by token hash: %w", err)
-	}
-
-	return session, nil
-}
-
-func (r *Repository) TouchSession(ctx context.Context, id uuid.UUID) error {
-	const query = `
-UPDATE sessions
-SET last_seen_at = NOW()
-WHERE id = $1`
-
-	if _, err := r.dbPool.Exec(ctx, query, id); err != nil {
-		return fmt.Errorf("touch session: %w", err)
-	}
-
-	return nil
 }
 
 func getUserByAccount(ctx context.Context, tx pgx.Tx, provider, providerUserID string) (*AuthUser, error) {
@@ -172,43 +113,4 @@ func scanAuthUser(row pgx.Row) (*AuthUser, error) {
 	}
 
 	return &user, nil
-}
-
-func scanUser(row pgx.Row) (*User, error) {
-	var user User
-	if err := row.Scan(
-		&user.ID,
-		&user.Name,
-		&user.Email,
-		&user.EmailVerified,
-		&user.AvatarURL,
-		&user.PasswordHash,
-		&user.Status,
-		&user.CreatedAt,
-		&user.UpdatedAt,
-	); err != nil {
-		return nil, err
-	}
-
-	return &user, nil
-}
-
-func scanSession(row pgx.Row) (*Session, error) {
-	var session Session
-	if err := row.Scan(
-		&session.ID,
-		&session.UserID,
-		&session.TokenHash,
-		&session.UserAgent,
-		&session.IPAddress,
-		&session.ExpiresAt,
-		&session.RevokedAt,
-		&session.LastSeenAt,
-		&session.CreatedAt,
-		&session.UpdatedAt,
-	); err != nil {
-		return nil, err
-	}
-
-	return &session, nil
 }

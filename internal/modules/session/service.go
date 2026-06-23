@@ -45,6 +45,10 @@ func (s *Service) CreateSession(ctx context.Context, userID uuid.UUID, userAgent
 	return rawToken, nil
 }
 
+func (s *Service) GetByToken(ctx context.Context, rawToken string) (*Session, error) {
+	return s.repository.GetByToken(ctx, rawToken)
+}
+
 func (s *Service) ListByUserID(ctx context.Context, userID uuid.UUID) ([]Session, error) {
 	return s.repository.ListByUserID(ctx, userID)
 }

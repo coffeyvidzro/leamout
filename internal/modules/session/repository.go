@@ -52,6 +52,38 @@ RETURNING id, user_id, token_hash, user_agent, ip_address, expires_at, revoked_a
 	return session, nil
 }
 
+func (r *Repository) GetByToken(ctx context.Context, rawToken string) (*Session, error) {
+	if rawToken == "" {
+		return nil, ErrNotFound
+	}
+
+	tokenHash := HashToken(rawToken)
+	if r.cache != nil {
+		if _, err := r.cache.Get(ctx, cacheKey(tokenHash)).Result(); err != nil && !errors.Is(err, redis.Nil) {
+			return nil, fmt.Errorf("get cached session: %w", err)
+		}
+	}
+
+	const query = `
+SELECT id, user_id, token_hash, user_agent, ip_address, expires_at, revoked_at, last_seen_at, created_at, updated_at
+FROM sessions
+WHERE token_hash = $1 AND expires_at > NOW() AND revoked_at IS NULL`
+
+	session, err := scanSession(r.db.QueryRow(ctx, query, tokenHash))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get session by token: %w", err)
+	}
+
+	if _, err := r.db.Exec(ctx, "UPDATE sessions SET last_seen_at = NOW() WHERE id = $1", session.ID); err != nil {
+		return nil, fmt.Errorf("touch session: %w", err)
+	}
+
+	return session, nil
+}
+
 func (r *Repository) ListByUserID(ctx context.Context, userID uuid.UUID) ([]Session, error) {
 	const query = `
 SELECT id, user_id, token_hash, user_agent, ip_address, expires_at, revoked_at, last_seen_at, created_at, updated_at

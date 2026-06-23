@@ -10,8 +10,6 @@ const (
 	UserStatusActive    = "active"
 	UserStatusSuspended = "suspended"
 	UserStatusDeleted   = "deleted"
-
-	SessionCookieName = "leamout_session"
 )
 
 type User struct {

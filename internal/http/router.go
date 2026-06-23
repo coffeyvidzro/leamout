@@ -25,7 +25,7 @@ func (s *Server) Router() *gin.Engine {
 	router.Use(middleware.CORS(s.cfg.CORSOrigins, s.cfg.IsDevelopment()))
 
 	auth.RegisterRoutes(router, s.authHandler())
-	session.RegisterRoutes(router, s.sessionHandler(), middleware.RequireAuth(s.authRepository()))
+	session.RegisterRoutes(router, s.sessionHandler(), middleware.AuthMiddleware(s.sessionService()))
 
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(nethttp.StatusOK, gin.H{

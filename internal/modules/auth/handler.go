@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/cuffeyvidzro/leamout/internal/http/middleware"
 	"github.com/gin-gonic/gin"
 )
 
@@ -41,7 +42,7 @@ func (h *Handler) GitHubCallback(c *gin.Context) {
 }
 
 func (h *Handler) Logout(c *gin.Context) {
-	token, _ := c.Cookie(SessionCookieName)
+	token, _ := c.Cookie(middleware.SessionCookieName)
 	if err := h.service.Logout(c.Request.Context(), token); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "failed to log out",
@@ -119,11 +120,11 @@ func (h *Handler) oauthCallback(c *gin.Context, provider string) {
 }
 
 func (h *Handler) setSessionCookie(c *gin.Context, token string) {
-	c.SetCookie(SessionCookieName, token, sessionCookieMaxAge, "/", "", !h.development, true)
+	c.SetCookie(middleware.SessionCookieName, token, sessionCookieMaxAge, "/", "", !h.development, true)
 }
 
 func (h *Handler) clearSessionCookie(c *gin.Context) {
-	c.SetCookie(SessionCookieName, "", -1, "/", "", !h.development, true)
+	c.SetCookie(middleware.SessionCookieName, "", -1, "/", "", !h.development, true)
 }
 
 func (h *Handler) setOAuthStateCookie(c *gin.Context, provider, state string) {
