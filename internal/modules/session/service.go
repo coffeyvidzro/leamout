@@ -18,10 +18,10 @@ const (
 )
 
 type Service struct {
-	repository Repository
+	repository *Repository
 }
 
-func NewService(repository Repository) *Service {
+func NewService(repository *Repository) *Service {
 	return &Service{repository: repository}
 }
 
@@ -33,6 +33,7 @@ func (s *Service) CreateSession(ctx context.Context, userID uuid.UUID, userAgent
 
 	if _, err := s.repository.Create(ctx, CreateParams{
 		UserID:    userID,
+		RawToken:  rawToken,
 		TokenHash: HashToken(rawToken),
 		UserAgent: userAgent,
 		IPAddress: ipAddress,
@@ -53,19 +54,15 @@ func (s *Service) GetSession(ctx context.Context, sessionID uuid.UUID) (*Session
 }
 
 func (s *Service) RevokeSpecificSession(ctx context.Context, userID, sessionID uuid.UUID) error {
-	return s.repository.RevokeByID(ctx, userID, sessionID)
+	return s.repository.Delete(ctx, userID, sessionID)
 }
 
 func (s *Service) RevokeAllUserSessions(ctx context.Context, userID uuid.UUID) error {
-	return s.repository.RevokeAllByUserID(ctx, userID)
+	return s.repository.DeleteAllByUserID(ctx, userID)
 }
 
 func (s *Service) RevokeByToken(ctx context.Context, rawToken string) error {
-	if rawToken == "" {
-		return nil
-	}
-
-	return s.repository.RevokeByTokenHash(ctx, HashToken(rawToken))
+	return s.repository.DeleteByToken(ctx, rawToken)
 }
 
 func HashToken(rawToken string) string {

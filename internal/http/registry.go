@@ -8,19 +8,22 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/modules/auth/oauth"
 	"github.com/cuffeyvidzro/leamout/internal/modules/session"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 )
 
 type Server struct {
 	cfg      *config.Config
 	log      *slog.Logger
 	postgres *pgxpool.Pool
+	redis    *redis.Client
 }
 
-func NewServer(cfg *config.Config, log *slog.Logger, postgres *pgxpool.Pool) *Server {
+func NewServer(cfg *config.Config, log *slog.Logger, postgres *pgxpool.Pool, redis *redis.Client) *Server {
 	return &Server{
 		cfg:      cfg,
 		log:      log,
 		postgres: postgres,
+		redis:    redis,
 	}
 }
 
@@ -40,7 +43,7 @@ func (s *Server) sessionHandler() *session.Handler {
 }
 
 func (s *Server) sessionService() *session.Service {
-	repository := session.NewPostgresRepository(s.postgres)
+	repository := session.NewRepository(s.postgres, s.redis)
 	return session.NewService(repository)
 }
 
