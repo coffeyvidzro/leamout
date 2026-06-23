@@ -11,6 +11,7 @@ import (
 const (
 	ContextAuthUser    = "auth_user"
 	ContextAuthSession = "auth_session"
+	ContextUserID      = "userID"
 )
 
 func RequireAuth(repository auth.Repository) gin.HandlerFunc {
@@ -48,6 +49,7 @@ func RequireAuth(repository auth.Repository) gin.HandlerFunc {
 
 		c.Set(ContextAuthUser, user)
 		c.Set(ContextAuthSession, session)
+		c.Set(ContextUserID, user.ID)
 		c.Next()
 	}
 }

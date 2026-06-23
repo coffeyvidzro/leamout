@@ -6,6 +6,7 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/config"
 	"github.com/cuffeyvidzro/leamout/internal/modules/auth"
 	"github.com/cuffeyvidzro/leamout/internal/modules/auth/oauth"
+	"github.com/cuffeyvidzro/leamout/internal/modules/session"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
@@ -26,12 +27,23 @@ func NewServer(cfg *config.Config, log *slog.Logger, postgres *pgxpool.Pool, red
 	}
 }
 
+func (s *Server) authRepository() *auth.PostgresRepository {
+	return auth.NewPostgresRepository(s.postgres)
+}
+
 func (s *Server) authHandler() *auth.Handler {
-	repository := auth.NewPostgresRepository(s.postgres)
+	repository := s.authRepository()
 	stateStore := auth.NewRedisStateStore(s.redis)
 	service := auth.NewService(s.oauthRegistry(), repository, stateStore)
 
 	return auth.NewHandler(service, s.cfg.IsDevelopment())
+}
+
+func (s *Server) sessionHandler() *session.Handler {
+	repository := session.NewPostgresRepository(s.postgres)
+	service := session.NewService(repository)
+
+	return session.NewHandler(service)
 }
 
 func (s *Server) oauthRegistry() *oauth.Registry {
