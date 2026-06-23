@@ -178,6 +178,20 @@ func (r *fakeRepository) CreateAccount(ctx context.Context, userID uuid.UUID, pr
 	return account, nil
 }
 
+func (r *fakeRepository) FindSessionByTokenHash(ctx context.Context, tokenHash string) (*Session, error) {
+	for _, session := range r.sessions {
+		if session.TokenHash == tokenHash {
+			return session, nil
+		}
+	}
+
+	return nil, nil
+}
+
+func (r *fakeRepository) TouchSession(ctx context.Context, id uuid.UUID) error {
+	return nil
+}
+
 func (r *fakeRepository) CreateSession(ctx context.Context, params CreateSessionParams) (*Session, error) {
 	session := &Session{
 		ID:        uuid.New(),

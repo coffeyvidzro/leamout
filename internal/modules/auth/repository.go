@@ -21,6 +21,8 @@ type Repository interface {
 	FindAccount(ctx context.Context, provider, providerUserID string) (*Account, error)
 	CreateAccount(ctx context.Context, userID uuid.UUID, profile *oauth.Profile) (*Account, error)
 	CreateSession(ctx context.Context, session CreateSessionParams) (*Session, error)
+	FindSessionByTokenHash(ctx context.Context, tokenHash string) (*Session, error)
+	TouchSession(ctx context.Context, id uuid.UUID) error
 	RevokeSessionByTokenHash(ctx context.Context, tokenHash string) error
 }
 
@@ -131,6 +133,36 @@ RETURNING id, user_id, token_hash, user_agent, ip_address, expires_at, revoked_a
 	}
 
 	return session, nil
+}
+
+func (r *PostgresRepository) FindSessionByTokenHash(ctx context.Context, tokenHash string) (*Session, error) {
+	const query = `
+SELECT id, user_id, token_hash, user_agent, ip_address, expires_at, revoked_at, last_seen_at, created_at, updated_at
+FROM sessions
+WHERE token_hash = $1`
+
+	session, err := scanSession(r.pool.QueryRow(ctx, query, tokenHash))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find session by token hash: %w", err)
+	}
+
+	return session, nil
+}
+
+func (r *PostgresRepository) TouchSession(ctx context.Context, id uuid.UUID) error {
+	const query = `
+UPDATE sessions
+SET last_seen_at = NOW()
+WHERE id = $1`
+
+	if _, err := r.pool.Exec(ctx, query, id); err != nil {
+		return fmt.Errorf("touch session: %w", err)
+	}
+
+	return nil
 }
 
 func (r *PostgresRepository) RevokeSessionByTokenHash(ctx context.Context, tokenHash string) error {
