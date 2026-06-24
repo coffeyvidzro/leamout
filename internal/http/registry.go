@@ -9,6 +9,7 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/modules/customer"
 	"github.com/cuffeyvidzro/leamout/internal/modules/product"
 	"github.com/cuffeyvidzro/leamout/internal/modules/session"
+	"github.com/cuffeyvidzro/leamout/internal/modules/subscription"
 	"github.com/cuffeyvidzro/leamout/internal/modules/user"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
@@ -69,6 +70,13 @@ func (s *Server) productHandler() *product.Handler {
 	service := product.NewService(repository)
 
 	return product.NewHandler(service)
+}
+
+func (s *Server) subscriptionHandler() *subscription.Handler {
+	repository := subscription.NewRepository(s.postgres)
+	service := subscription.NewService(repository)
+
+	return subscription.NewHandler(service)
 }
 
 func (s *Server) oauthRegistry() *oauth.Registry {
