@@ -76,6 +76,25 @@ func (h *Handler) Update(c *gin.Context) {
 	respondCheckout(c, session, err)
 }
 
+func (h *Handler) GetPublic(c *gin.Context) {
+	session, err := h.service.GetPublic(c.Request.Context(), c.Param("clientSecret"))
+	respondCheckout(c, session, err)
+}
+
+func (h *Handler) Confirm(c *gin.Context) {
+	session, err := h.service.Confirm(c.Request.Context(), c.Param("clientSecret"))
+	if errors.Is(err, ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "checkout session not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to confirm checkout session"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "checkout confirmed", "session": session})
+}
+
 func respondCheckout(c *gin.Context, session *Session, err error) {
 	if errors.Is(err, ErrNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "checkout session not found"})

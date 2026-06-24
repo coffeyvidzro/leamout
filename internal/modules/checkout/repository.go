@@ -9,7 +9,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -23,30 +22,71 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) CreateOrReuseFromDunning(ctx context.Context, params CreateSessionParams) (*Session, error) {
-	session, err := r.findReusable(ctx, params)
-	if err == nil {
-		return session, nil
-	}
-	if !errors.Is(err, ErrNotFound) {
+func (r *Repository) Create(ctx context.Context, userID uuid.UUID, req CreateRequest, clientSecretHash string) (*Session, error) {
+	metadata, err := encodeJSON(defaultMetadata(req.Metadata))
+	if err != nil {
 		return nil, err
 	}
 
-	created, err := r.createFromDunning(ctx, params)
-	if err == nil {
-		return created, nil
+	mode := req.Mode
+	if mode == "" {
+		mode = ModePayment
 	}
-	if isUniqueViolation(err) {
-		return r.findReusable(ctx, params)
+	source := req.Source
+	if source == "" {
+		source = SourceAPI
 	}
 
-	return nil, err
+	const query = `
+INSERT INTO checkout_sessions (
+	user_id,
+	customer_id,
+	subscription_id,
+	mode,
+	source,
+	label,
+	amount,
+	currency,
+	client_secret_hash,
+	success_url,
+	return_url,
+	expires_at,
+	metadata
+)
+VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''), $7, $8, $9, NULLIF($10, ''), NULLIF($11, ''), $12, $13)
+RETURNING id, user_id, customer_id, subscription_id, mode, source, label, amount, currency,
+	client_secret_hash, success_url, return_url, status, expires_at, completed_at, canceled_at,
+	metadata, created_at, updated_at`
+
+	session, err := scanSession(r.db.QueryRow(
+		ctx,
+		query,
+		userID,
+		req.CustomerID,
+		req.SubscriptionID,
+		mode,
+		source,
+		optionalString(req.Label),
+		req.Amount,
+		strings.ToUpper(strings.TrimSpace(req.Currency)),
+		clientSecretHash,
+		optionalString(req.SuccessURL),
+		optionalString(req.ReturnURL),
+		req.ExpiresAt,
+		metadata,
+	))
+	if err != nil {
+		return nil, fmt.Errorf("create checkout session: %w", err)
+	}
+
+	return session, nil
 }
 
 func (r *Repository) List(ctx context.Context, userID uuid.UUID) ([]Session, error) {
 	const query = `
-SELECT id, user_id, customer_id, subscription_id, dunning_attempt_id, dunning_token_id, status,
-	amount, currency, expires_at, completed_at, canceled_at, metadata, created_at, updated_at
+SELECT id, user_id, customer_id, subscription_id, mode, source, label, amount, currency,
+	client_secret_hash, success_url, return_url, status, expires_at, completed_at, canceled_at,
+	metadata, created_at, updated_at
 FROM checkout_sessions
 WHERE user_id = $1
 ORDER BY created_at DESC`
@@ -74,12 +114,39 @@ ORDER BY created_at DESC`
 
 func (r *Repository) Get(ctx context.Context, userID, id uuid.UUID) (*Session, error) {
 	const query = `
-SELECT id, user_id, customer_id, subscription_id, dunning_attempt_id, dunning_token_id, status,
-	amount, currency, expires_at, completed_at, canceled_at, metadata, created_at, updated_at
+SELECT id, user_id, customer_id, subscription_id, mode, source, label, amount, currency,
+	client_secret_hash, success_url, return_url, status, expires_at, completed_at, canceled_at,
+	metadata, created_at, updated_at
 FROM checkout_sessions
 WHERE user_id = $1 AND id = $2`
 
 	return r.get(ctx, query, userID, id)
+}
+
+func (r *Repository) GetByClientSecretHash(ctx context.Context, clientSecretHash string) (*Session, error) {
+	const query = `
+SELECT id, user_id, customer_id, subscription_id, mode, source, label, amount, currency,
+	client_secret_hash, success_url, return_url, status, expires_at, completed_at, canceled_at,
+	metadata, created_at, updated_at
+FROM checkout_sessions
+WHERE client_secret_hash = $1
+  AND expires_at > NOW()`
+
+	return r.get(ctx, query, clientSecretHash)
+}
+
+func (r *Repository) ConfirmByClientSecretHash(ctx context.Context, clientSecretHash string) (*Session, error) {
+	const query = `
+UPDATE checkout_sessions
+SET status = 'completed', completed_at = COALESCE(completed_at, NOW())
+WHERE client_secret_hash = $1
+  AND status = 'open'
+  AND expires_at > NOW()
+RETURNING id, user_id, customer_id, subscription_id, mode, source, label, amount, currency,
+	client_secret_hash, success_url, return_url, status, expires_at, completed_at, canceled_at,
+	metadata, created_at, updated_at`
+
+	return r.get(ctx, query, clientSecretHash)
 }
 
 func (r *Repository) Update(ctx context.Context, userID, id uuid.UUID, req UpdateRequest) (*Session, error) {
@@ -106,85 +173,8 @@ func (r *Repository) get(ctx context.Context, query string, args ...any) (*Sessi
 	return session, nil
 }
 
-func (r *Repository) findReusable(ctx context.Context, params CreateSessionParams) (*Session, error) {
-	const query = `
-SELECT id, user_id, customer_id, subscription_id, dunning_attempt_id, dunning_token_id, status,
-	amount, currency, expires_at, completed_at, canceled_at, metadata, created_at, updated_at
-FROM checkout_sessions
-WHERE dunning_token_id = $1
-   OR (dunning_attempt_id = $2 AND status = 'open' AND expires_at > NOW())
-ORDER BY created_at DESC
-LIMIT 1`
-
-	session, err := scanSession(r.db.QueryRow(ctx, query, params.DunningTokenID, params.DunningAttemptID))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("find checkout session: %w", err)
-	}
-
-	return session, nil
-}
-
-func (r *Repository) createFromDunning(ctx context.Context, params CreateSessionParams) (*Session, error) {
-	metadata, err := encodeJSON(defaultMetadata(params.Metadata))
-	if err != nil {
-		return nil, err
-	}
-
-	const query = `
-INSERT INTO checkout_sessions (
-	user_id,
-	customer_id,
-	subscription_id,
-	dunning_attempt_id,
-	dunning_token_id,
-	amount,
-	currency,
-	expires_at,
-	metadata
-)
-SELECT
-	$1,
-	$2,
-	$3,
-	$4,
-	$5,
-	p.unit_amount,
-	p.currency,
-	$6,
-	$7
-FROM subscriptions s
-JOIN prices p ON p.id = s.price_id AND p.user_id = s.user_id
-WHERE s.user_id = $1
-  AND s.id = $3
-RETURNING id, user_id, customer_id, subscription_id, dunning_attempt_id, dunning_token_id, status,
-	amount, currency, expires_at, completed_at, canceled_at, metadata, created_at, updated_at`
-
-	session, err := scanSession(r.db.QueryRow(
-		ctx,
-		query,
-		params.UserID,
-		params.CustomerID,
-		params.SubscriptionID,
-		params.DunningAttemptID,
-		params.DunningTokenID,
-		params.ExpiresAt,
-		metadata,
-	))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("create checkout session: %w", err)
-	}
-
-	return session, nil
-}
-
 func buildUpdateQuery(args []any, req UpdateRequest) (string, []any, error) {
-	updates := make([]string, 0, 4)
+	updates := make([]string, 0, 6)
 
 	if req.Status != nil {
 		updates = append(updates, fmt.Sprintf("status = $%d", len(args)+1))
@@ -192,6 +182,21 @@ func buildUpdateQuery(args []any, req UpdateRequest) (string, []any, error) {
 		if *req.Status == StatusCompleted {
 			updates = append(updates, "completed_at = COALESCE(completed_at, NOW())")
 		}
+		if *req.Status == StatusCanceled {
+			updates = append(updates, "canceled_at = COALESCE(canceled_at, NOW())")
+		}
+	}
+	if req.Label != nil {
+		updates = append(updates, fmt.Sprintf("label = NULLIF($%d, '')", len(args)+1))
+		args = append(args, strings.TrimSpace(*req.Label))
+	}
+	if req.SuccessURL != nil {
+		updates = append(updates, fmt.Sprintf("success_url = NULLIF($%d, '')", len(args)+1))
+		args = append(args, strings.TrimSpace(*req.SuccessURL))
+	}
+	if req.ReturnURL != nil {
+		updates = append(updates, fmt.Sprintf("return_url = NULLIF($%d, '')", len(args)+1))
+		args = append(args, strings.TrimSpace(*req.ReturnURL))
 	}
 	if req.ExpiresAt != nil {
 		updates = append(updates, fmt.Sprintf("expires_at = $%d", len(args)+1))
@@ -217,8 +222,9 @@ func buildUpdateQuery(args []any, req UpdateRequest) (string, []any, error) {
 UPDATE checkout_sessions
 SET %s
 WHERE user_id = $1 AND id = $2
-RETURNING id, user_id, customer_id, subscription_id, dunning_attempt_id, dunning_token_id, status,
-	amount, currency, expires_at, completed_at, canceled_at, metadata, created_at, updated_at`, strings.Join(updates, ", "))
+RETURNING id, user_id, customer_id, subscription_id, mode, source, label, amount, currency,
+	client_secret_hash, success_url, return_url, status, expires_at, completed_at, canceled_at,
+	metadata, created_at, updated_at`, strings.Join(updates, ", "))
 
 	return query, args, nil
 }
@@ -232,11 +238,15 @@ func scanSession(row pgx.Row) (*Session, error) {
 		&session.UserID,
 		&session.CustomerID,
 		&session.SubscriptionID,
-		&session.DunningAttemptID,
-		&session.DunningTokenID,
-		&session.Status,
+		&session.Mode,
+		&session.Source,
+		&session.Label,
 		&session.Amount,
 		&session.Currency,
+		&session.ClientSecretHash,
+		&session.SuccessURL,
+		&session.ReturnURL,
+		&session.Status,
 		&session.ExpiresAt,
 		&session.CompletedAt,
 		&session.CanceledAt,
@@ -276,7 +286,10 @@ func defaultMetadata(metadata map[string]any) map[string]any {
 	return metadata
 }
 
-func isUniqueViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+func optionalString(value *string) string {
+	if value == nil {
+		return ""
+	}
+
+	return strings.TrimSpace(*value)
 }
