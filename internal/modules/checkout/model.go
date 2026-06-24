@@ -33,6 +33,22 @@ type Session struct {
 	UpdatedAt        time.Time      `json:"updated_at"`
 }
 
+type CreateRequest struct {
+	CustomerID       *uuid.UUID     `json:"customer_id"`
+	SubscriptionID   uuid.UUID      `json:"subscription_id" binding:"required"`
+	DunningAttemptID uuid.UUID      `json:"dunning_attempt_id" binding:"required"`
+	DunningTokenID   uuid.UUID      `json:"dunning_token_id" binding:"required"`
+	ExpiresAt        time.Time      `json:"expires_at" binding:"required"`
+	Metadata         map[string]any `json:"metadata"`
+}
+
+type UpdateRequest struct {
+	Status     *Status        `json:"status,omitempty" binding:"omitempty,oneof=open completed expired canceled"`
+	ExpiresAt  *time.Time     `json:"expires_at,omitempty"`
+	Metadata   map[string]any `json:"metadata,omitempty"`
+	CanceledAt *time.Time     `json:"canceled_at,omitempty"`
+}
+
 type CreateSessionParams struct {
 	UserID           uuid.UUID
 	CustomerID       *uuid.UUID
@@ -41,8 +57,4 @@ type CreateSessionParams struct {
 	DunningTokenID   uuid.UUID
 	ExpiresAt        time.Time
 	Metadata         map[string]any
-}
-
-type CheckoutPage struct {
-	Session Session `json:"session"`
 }

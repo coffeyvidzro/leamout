@@ -8,7 +8,6 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/modules/auth/oauth"
 	"github.com/cuffeyvidzro/leamout/internal/modules/checkout"
 	"github.com/cuffeyvidzro/leamout/internal/modules/customer"
-	"github.com/cuffeyvidzro/leamout/internal/modules/dunning"
 	"github.com/cuffeyvidzro/leamout/internal/modules/product"
 	"github.com/cuffeyvidzro/leamout/internal/modules/session"
 	"github.com/cuffeyvidzro/leamout/internal/modules/subscription"
@@ -81,14 +80,9 @@ func (s *Server) subscriptionHandler() *subscription.Handler {
 	return subscription.NewHandler(service)
 }
 
-func (s *Server) dunningService() *dunning.Service {
-	repository := dunning.NewRepository(s.postgres)
-	return dunning.NewService(repository)
-}
-
 func (s *Server) checkoutHandler() *checkout.Handler {
 	repository := checkout.NewRepository(s.postgres)
-	service := checkout.NewService(repository, s.dunningService())
+	service := checkout.NewService(repository)
 
 	return checkout.NewHandler(service)
 }

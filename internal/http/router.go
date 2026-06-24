@@ -30,13 +30,13 @@ func (s *Server) Router() *gin.Engine {
 	router.Use(middleware.CORS(s.cfg.CORSOrigins, s.cfg.IsDevelopment()))
 
 	auth.RegisterRoutes(router, s.authHandler())
-	checkout.RegisterRoutes(router, s.checkoutHandler())
 	authMiddleware := middleware.AuthMiddleware(s.sessionService())
 	session.RegisterRoutes(router, s.sessionHandler(), authMiddleware)
 	user.RegisterRoutes(router, s.userHandler(), authMiddleware)
 	customer.RegisterRoutes(router, s.customerHandler(), authMiddleware)
 	product.RegisterRoutes(router, s.productHandler(), authMiddleware)
 	subscription.RegisterRoutes(router, s.subscriptionHandler(), authMiddleware)
+	checkout.RegisterRoutes(router, s.checkoutHandler(), authMiddleware)
 
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(nethttp.StatusOK, gin.H{

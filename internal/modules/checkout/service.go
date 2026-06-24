@@ -2,86 +2,38 @@ package checkout
 
 import (
 	"context"
-	"errors"
-	"time"
 
-	"github.com/cuffeyvidzro/leamout/internal/modules/dunning"
+	"github.com/google/uuid"
 )
 
-const defaultSessionTTL = 30 * time.Minute
-
-var ErrInvalidToken = errors.New("invalid checkout token")
-
 type Service struct {
-	repository     *Repository
-	dunningService *dunning.Service
+	repository *Repository
 }
 
-func NewService(repository *Repository, dunningService *dunning.Service) *Service {
-	return &Service{repository: repository, dunningService: dunningService}
+func NewService(repository *Repository) *Service {
+	return &Service{repository: repository}
 }
 
-func (s *Service) StartFromToken(ctx context.Context, rawToken string) (*Session, error) {
-	tokenWithAttempt, err := s.validToken(ctx, rawToken)
-	if err != nil {
-		return nil, err
-	}
-
-	expiresAt := time.Now().UTC().Add(defaultSessionTTL)
-	if tokenWithAttempt.Token.ExpiresAt.Before(expiresAt) {
-		expiresAt = tokenWithAttempt.Token.ExpiresAt
-	}
-
+func (s *Service) Create(ctx context.Context, userID uuid.UUID, req CreateRequest) (*Session, error) {
 	return s.repository.CreateOrReuseFromDunning(ctx, CreateSessionParams{
-		UserID:           tokenWithAttempt.Attempt.UserID,
-		CustomerID:       tokenWithAttempt.Attempt.CustomerID,
-		SubscriptionID:   tokenWithAttempt.Attempt.SubscriptionID,
-		DunningAttemptID: tokenWithAttempt.Attempt.ID,
-		DunningTokenID:   tokenWithAttempt.Token.ID,
-		ExpiresAt:        expiresAt,
+		UserID:           userID,
+		CustomerID:       req.CustomerID,
+		SubscriptionID:   req.SubscriptionID,
+		DunningAttemptID: req.DunningAttemptID,
+		DunningTokenID:   req.DunningTokenID,
+		ExpiresAt:        req.ExpiresAt,
+		Metadata:         req.Metadata,
 	})
 }
 
-func (s *Service) CompleteMockPayment(ctx context.Context, rawToken string) (*Session, error) {
-	session, err := s.StartFromToken(ctx, rawToken)
-	if err != nil {
-		return nil, err
-	}
-
-	if _, err := s.dunningService.ConsumeToken(ctx, rawToken); err != nil {
-		return nil, err
-	}
-
-	completed, err := s.repository.Complete(ctx, session.ID)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := s.dunningService.MarkAttemptPaid(ctx, completed.DunningAttemptID); err != nil {
-		return nil, err
-	}
-
-	return completed, nil
+func (s *Service) List(ctx context.Context, userID uuid.UUID) ([]Session, error) {
+	return s.repository.List(ctx, userID)
 }
 
-func (s *Service) validToken(ctx context.Context, rawToken string) (*dunning.TokenWithAttempt, error) {
-	if rawToken == "" {
-		return nil, ErrInvalidToken
-	}
+func (s *Service) Get(ctx context.Context, userID, id uuid.UUID) (*Session, error) {
+	return s.repository.Get(ctx, userID, id)
+}
 
-	tokenWithAttempt, err := s.dunningService.GetByToken(ctx, rawToken)
-	if err != nil {
-		return nil, err
-	}
-	if tokenWithAttempt.Token.UsedAt != nil || !tokenWithAttempt.Token.ExpiresAt.After(time.Now().UTC()) {
-		return nil, ErrInvalidToken
-	}
-	if tokenWithAttempt.Attempt.Status == dunning.AttemptStatusPaid ||
-		tokenWithAttempt.Attempt.Status == dunning.AttemptStatusCanceled ||
-		tokenWithAttempt.Attempt.Status == dunning.AttemptStatusExpired ||
-		!tokenWithAttempt.Attempt.ExpiresAt.After(time.Now().UTC()) {
-		return nil, ErrInvalidToken
-	}
-
-	return tokenWithAttempt, nil
+func (s *Service) Update(ctx context.Context, userID, id uuid.UUID, req UpdateRequest) (*Session, error) {
+	return s.repository.Update(ctx, userID, id, req)
 }
