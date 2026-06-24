@@ -7,6 +7,7 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/modules/auth"
 	"github.com/cuffeyvidzro/leamout/internal/modules/auth/oauth"
 	"github.com/cuffeyvidzro/leamout/internal/modules/customer"
+	"github.com/cuffeyvidzro/leamout/internal/modules/product"
 	"github.com/cuffeyvidzro/leamout/internal/modules/session"
 	"github.com/cuffeyvidzro/leamout/internal/modules/user"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -61,6 +62,13 @@ func (s *Server) customerHandler() *customer.Handler {
 	service := customer.NewService(repository)
 
 	return customer.NewHandler(service)
+}
+
+func (s *Server) productHandler() *product.Handler {
+	repository := product.NewRepository(s.postgres)
+	service := product.NewService(repository)
+
+	return product.NewHandler(service)
 }
 
 func (s *Server) oauthRegistry() *oauth.Registry {

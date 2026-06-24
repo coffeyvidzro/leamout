@@ -7,6 +7,7 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/http/middleware"
 	"github.com/cuffeyvidzro/leamout/internal/modules/auth"
 	"github.com/cuffeyvidzro/leamout/internal/modules/customer"
+	"github.com/cuffeyvidzro/leamout/internal/modules/product"
 	"github.com/cuffeyvidzro/leamout/internal/modules/session"
 	"github.com/cuffeyvidzro/leamout/internal/modules/user"
 	"github.com/gin-gonic/gin"
@@ -31,6 +32,7 @@ func (s *Server) Router() *gin.Engine {
 	session.RegisterRoutes(router, s.sessionHandler(), authMiddleware)
 	user.RegisterRoutes(router, s.userHandler(), authMiddleware)
 	customer.RegisterRoutes(router, s.customerHandler(), authMiddleware)
+	product.RegisterRoutes(router, s.productHandler(), authMiddleware)
 
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(nethttp.StatusOK, gin.H{
