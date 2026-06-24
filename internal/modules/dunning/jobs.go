@@ -108,7 +108,6 @@ func (w *SendReminderWorker) Work(ctx context.Context, job *river.Job[SendRemind
 	message := fmt.Sprintf("Your Leamout subscription expires soon. Renew here: %s", link)
 	if err := w.sender.Send(ctx, provider.Message{
 		To:      details.CustomerPhone,
-		From:    "Leamout",
 		Content: message,
 	}); err != nil {
 		return fmt.Errorf("send dunning sms: %w", err)

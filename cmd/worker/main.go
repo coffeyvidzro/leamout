@@ -13,6 +13,7 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/platform/database"
 	"github.com/cuffeyvidzro/leamout/internal/platform/logger"
 	"github.com/cuffeyvidzro/leamout/internal/platform/queue"
+	"github.com/cuffeyvidzro/leamout/internal/sms"
 	smsmock "github.com/cuffeyvidzro/leamout/internal/sms/provider/mock"
 )
 
@@ -41,10 +42,14 @@ func main() {
 
 	workers := queue.NewWorkerRegistry()
 	dunningService := dunning.NewService(dunning.NewRepository(postgresPool), nil)
+	smsService := sms.NewService(
+		smsmock.NewProvider(smsmock.NewClient(false)),
+		sms.Config{DefaultFrom: "Leamout"},
+	)
 	dunning.RegisterSendReminderWorker(
 		workers,
 		dunningService,
-		smsmock.NewProvider(smsmock.NewClient(false)),
+		smsService,
 		cfg.BaseURL,
 		log,
 	)
