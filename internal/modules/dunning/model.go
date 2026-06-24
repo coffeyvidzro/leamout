@@ -1,0 +1,72 @@
+package dunning
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
+
+type AttemptStatus string
+
+type AttemptReason string
+
+const (
+	AttemptStatusPending  AttemptStatus = "pending"
+	AttemptStatusSent     AttemptStatus = "sent"
+	AttemptStatusPaid     AttemptStatus = "paid"
+	AttemptStatusExpired  AttemptStatus = "expired"
+	AttemptStatusCanceled AttemptStatus = "canceled"
+
+	AttemptReasonRenewalDue    AttemptReason = "renewal_due"
+	AttemptReasonPaymentFailed AttemptReason = "payment_failed"
+	AttemptReasonUsageDue      AttemptReason = "usage_due"
+)
+
+type Attempt struct {
+	ID             uuid.UUID      `json:"id"`
+	UserID         uuid.UUID      `json:"user_id"`
+	SubscriptionID uuid.UUID      `json:"subscription_id"`
+	CustomerID     *uuid.UUID     `json:"customer_id,omitempty"`
+	Status         AttemptStatus  `json:"status"`
+	Reason         AttemptReason  `json:"reason"`
+	PeriodEnd      time.Time      `json:"period_end"`
+	ExpiresAt      time.Time      `json:"expires_at"`
+	SentAt         *time.Time     `json:"sent_at,omitempty"`
+	PaidAt         *time.Time     `json:"paid_at,omitempty"`
+	CanceledAt     *time.Time     `json:"canceled_at,omitempty"`
+	Metadata       map[string]any `json:"metadata"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
+}
+
+type Token struct {
+	ID               uuid.UUID  `json:"id"`
+	UserID           uuid.UUID  `json:"user_id"`
+	DunningAttemptID uuid.UUID  `json:"dunning_attempt_id"`
+	TokenHash        string     `json:"-"`
+	ExpiresAt        time.Time  `json:"expires_at"`
+	UsedAt           *time.Time `json:"used_at,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+}
+
+type CreateAttemptParams struct {
+	UserID         uuid.UUID
+	SubscriptionID uuid.UUID
+	CustomerID     *uuid.UUID
+	Reason         AttemptReason
+	PeriodEnd      time.Time
+	ExpiresAt      time.Time
+	Metadata       map[string]any
+}
+
+type CreateTokenParams struct {
+	UserID           uuid.UUID
+	DunningAttemptID uuid.UUID
+	TokenHash        string
+	ExpiresAt        time.Time
+}
+
+type TokenWithAttempt struct {
+	Token   Token   `json:"token"`
+	Attempt Attempt `json:"attempt"`
+}
