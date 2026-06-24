@@ -20,6 +20,11 @@ type OAuthConfig struct {
 	ClientSecret string `env:"CLIENT_SECRET"`
 }
 
+type ProviderConfig struct {
+	BaseURL string `env:"BASE_URL"`
+	APIKey  string `env:"API_KEY"`
+}
+
 type Config struct {
 	AppEnv      string   `env:"APP_ENV" envDefault:"development"`
 	HTTPPort    string   `env:"HTTP_PORT" envDefault:"8080"`
@@ -33,6 +38,8 @@ type Config struct {
 
 	Google OAuthConfig `envPrefix:"GOOGLE_"`
 	Github OAuthConfig `envPrefix:"GITHUB_"`
+
+	Arkesel ProviderConfig `envPrefix:"ARKESEL_"`
 }
 
 func Load() (*Config, error) {
