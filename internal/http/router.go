@@ -5,6 +5,14 @@ import (
 	"time"
 
 	"github.com/cuffeyvidzro/leamout/internal/http/middleware"
+	"github.com/cuffeyvidzro/leamout/internal/modules/auth"
+	"github.com/cuffeyvidzro/leamout/internal/modules/checkout"
+	"github.com/cuffeyvidzro/leamout/internal/modules/customer"
+	"github.com/cuffeyvidzro/leamout/internal/modules/dunning"
+	"github.com/cuffeyvidzro/leamout/internal/modules/product"
+	"github.com/cuffeyvidzro/leamout/internal/modules/session"
+	"github.com/cuffeyvidzro/leamout/internal/modules/subscription"
+	"github.com/cuffeyvidzro/leamout/internal/modules/user"
 	"github.com/gin-gonic/gin"
 )
 
@@ -21,6 +29,16 @@ func (s *Server) Router() *gin.Engine {
 	router.Use(middleware.RequestLogger(s.log))
 	router.Use(middleware.Secure(s.cfg.IsDevelopment()))
 	router.Use(middleware.CORS(s.cfg.CORSOrigins, s.cfg.IsDevelopment()))
+
+	auth.RegisterRoutes(router, s.authHandler())
+	authMiddleware := middleware.AuthMiddleware(s.sessionService())
+	session.RegisterRoutes(router, s.sessionHandler(), authMiddleware)
+	user.RegisterRoutes(router, s.userHandler(), authMiddleware)
+	customer.RegisterRoutes(router, s.customerHandler(), authMiddleware)
+	product.RegisterRoutes(router, s.productHandler(), authMiddleware)
+	subscription.RegisterRoutes(router, s.subscriptionHandler(), authMiddleware)
+	checkout.RegisterRoutes(router, s.checkoutHandler(), authMiddleware)
+	dunning.RegisterRoutes(router, s.dunningHandler(), authMiddleware)
 
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(nethttp.StatusOK, gin.H{
