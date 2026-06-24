@@ -4,8 +4,8 @@ CREATE TABLE checkout_sessions (
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     customer_id UUID,
     subscription_id UUID NOT NULL,
-    dunning_attempt_id UUID NOT NULL REFERENCES dunning_attempts(id) ON DELETE CASCADE,
-    dunning_token_id UUID NOT NULL REFERENCES dunning_tokens(id) ON DELETE RESTRICT,
+    dunning_attempt_id UUID NOT NULL,
+    dunning_token_id UUID NOT NULL,
     status TEXT NOT NULL DEFAULT 'open',
     amount BIGINT NOT NULL,
     currency TEXT NOT NULL,
@@ -20,6 +20,14 @@ CREATE TABLE checkout_sessions (
         FOREIGN KEY (user_id, subscription_id)
         REFERENCES subscriptions(user_id, id)
         ON DELETE CASCADE,
+    CONSTRAINT fk_checkout_sessions_user_dunning_attempt
+        FOREIGN KEY (user_id, dunning_attempt_id)
+        REFERENCES dunning_attempts(user_id, id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_checkout_sessions_user_dunning_token
+        FOREIGN KEY (user_id, dunning_token_id)
+        REFERENCES dunning_tokens(user_id, id)
+        ON DELETE RESTRICT,
     CONSTRAINT fk_checkout_sessions_user_customer
         FOREIGN KEY (user_id, customer_id)
         REFERENCES customers(user_id, id)

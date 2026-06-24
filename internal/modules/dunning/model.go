@@ -19,7 +19,6 @@ const (
 
 	AttemptReasonRenewalDue    AttemptReason = "renewal_due"
 	AttemptReasonPaymentFailed AttemptReason = "payment_failed"
-	AttemptReasonUsageDue      AttemptReason = "usage_due"
 )
 
 type Attempt struct {
@@ -32,6 +31,7 @@ type Attempt struct {
 	PeriodEnd      time.Time      `json:"period_end"`
 	ExpiresAt      time.Time      `json:"expires_at"`
 	SentAt         *time.Time     `json:"sent_at,omitempty"`
+	ClickedAt      *time.Time     `json:"clicked_at,omitempty"`
 	PaidAt         *time.Time     `json:"paid_at,omitempty"`
 	CanceledAt     *time.Time     `json:"canceled_at,omitempty"`
 	Metadata       map[string]any `json:"metadata"`
@@ -45,8 +45,10 @@ type Token struct {
 	DunningAttemptID uuid.UUID  `json:"dunning_attempt_id"`
 	TokenHash        string     `json:"-"`
 	ExpiresAt        time.Time  `json:"expires_at"`
-	UsedAt           *time.Time `json:"used_at,omitempty"`
+	RevokedAt        *time.Time `json:"revoked_at,omitempty"`
+	LastUsedAt       *time.Time `json:"last_used_at,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
 type CreateAttemptParams struct {

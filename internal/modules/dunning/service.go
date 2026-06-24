@@ -65,12 +65,28 @@ func (s *Service) GetByToken(ctx context.Context, rawToken string) (*TokenWithAt
 	return s.repository.GetByTokenHash(ctx, HashToken(rawToken))
 }
 
-func (s *Service) ConsumeToken(ctx context.Context, rawToken string) (*TokenWithAttempt, error) {
-	return s.repository.ConsumeToken(ctx, HashToken(rawToken))
+func (s *Service) RecordTokenUse(ctx context.Context, rawToken string) (*TokenWithAttempt, error) {
+	result, err := s.repository.RecordTokenUse(ctx, HashToken(rawToken))
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repository.MarkAttemptClicked(ctx, result.Attempt.ID); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+func (s *Service) RevokeToken(ctx context.Context, rawToken string) error {
+	return s.repository.RevokeToken(ctx, HashToken(rawToken))
 }
 
 func (s *Service) MarkAttemptSent(ctx context.Context, attemptID uuid.UUID) error {
 	return s.repository.MarkAttemptSent(ctx, attemptID)
+}
+
+func (s *Service) MarkAttemptClicked(ctx context.Context, attemptID uuid.UUID) error {
+	return s.repository.MarkAttemptClicked(ctx, attemptID)
 }
 
 func (s *Service) MarkAttemptPaid(ctx context.Context, attemptID uuid.UUID) error {

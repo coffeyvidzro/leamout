@@ -64,11 +64,12 @@ func (r *Repository) CreateToken(ctx context.Context, params CreateTokenParams) 
 func (r *Repository) GetByTokenHash(ctx context.Context, tokenHash string) (*TokenWithAttempt, error) {
 	const query = `
 SELECT
-	t.id, t.user_id, t.dunning_attempt_id, t.token_hash, t.expires_at, t.used_at, t.created_at,
+	t.id, t.user_id, t.dunning_attempt_id, t.token_hash, t.expires_at, t.revoked_at,
+	t.last_used_at, t.created_at, t.updated_at,
 	a.id, a.user_id, a.subscription_id, a.customer_id, a.status, a.reason, a.period_end, a.expires_at,
-	a.sent_at, a.paid_at, a.canceled_at, a.metadata, a.created_at, a.updated_at
+	a.sent_at, a.clicked_at, a.paid_at, a.canceled_at, a.metadata, a.created_at, a.updated_at
 FROM dunning_tokens t
-JOIN dunning_attempts a ON a.id = t.dunning_attempt_id
+JOIN dunning_attempts a ON a.user_id = t.user_id AND a.id = t.dunning_attempt_id
 WHERE t.token_hash = $1`
 
 	result, err := scanTokenWithAttempt(r.db.QueryRow(ctx, query, tokenHash))
@@ -82,32 +83,45 @@ WHERE t.token_hash = $1`
 	return result, nil
 }
 
-func (r *Repository) ConsumeToken(ctx context.Context, tokenHash string) (*TokenWithAttempt, error) {
+func (r *Repository) RecordTokenUse(ctx context.Context, tokenHash string) (*TokenWithAttempt, error) {
 	const query = `
-WITH consumed AS (
+WITH touched AS (
 	UPDATE dunning_tokens
-	SET used_at = NOW()
+	SET last_used_at = NOW()
 	WHERE token_hash = $1
-	  AND used_at IS NULL
+	  AND revoked_at IS NULL
 	  AND expires_at > NOW()
-	RETURNING id, user_id, dunning_attempt_id, token_hash, expires_at, used_at, created_at
+	RETURNING id, user_id, dunning_attempt_id, token_hash, expires_at, revoked_at, last_used_at, created_at, updated_at
 )
 SELECT
-	c.id, c.user_id, c.dunning_attempt_id, c.token_hash, c.expires_at, c.used_at, c.created_at,
+	t.id, t.user_id, t.dunning_attempt_id, t.token_hash, t.expires_at, t.revoked_at,
+	t.last_used_at, t.created_at, t.updated_at,
 	a.id, a.user_id, a.subscription_id, a.customer_id, a.status, a.reason, a.period_end, a.expires_at,
-	a.sent_at, a.paid_at, a.canceled_at, a.metadata, a.created_at, a.updated_at
-FROM consumed c
-JOIN dunning_attempts a ON a.id = c.dunning_attempt_id`
+	a.sent_at, a.clicked_at, a.paid_at, a.canceled_at, a.metadata, a.created_at, a.updated_at
+FROM touched t
+JOIN dunning_attempts a ON a.user_id = t.user_id AND a.id = t.dunning_attempt_id`
 
 	result, err := scanTokenWithAttempt(r.db.QueryRow(ctx, query, tokenHash))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("consume dunning token: %w", err)
+		return nil, fmt.Errorf("record dunning token use: %w", err)
 	}
 
 	return result, nil
+}
+
+func (r *Repository) RevokeToken(ctx context.Context, tokenHash string) error {
+	result, err := r.db.Exec(ctx, `UPDATE dunning_tokens SET revoked_at = COALESCE(revoked_at, NOW()) WHERE token_hash = $1`, tokenHash)
+	if err != nil {
+		return fmt.Errorf("revoke dunning token: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+
+	return nil
 }
 
 func (r *Repository) MarkAttemptSent(ctx context.Context, attemptID uuid.UUID) error {
@@ -116,8 +130,14 @@ func (r *Repository) MarkAttemptSent(ctx context.Context, attemptID uuid.UUID) e
 	return err
 }
 
+func (r *Repository) MarkAttemptClicked(ctx context.Context, attemptID uuid.UUID) error {
+	const query = `UPDATE dunning_attempts SET clicked_at = COALESCE(clicked_at, NOW()) WHERE id = $1`
+	_, err := r.db.Exec(ctx, query, attemptID)
+	return err
+}
+
 func (r *Repository) MarkAttemptPaid(ctx context.Context, attemptID uuid.UUID) error {
-	const query = `UPDATE dunning_attempts SET status = 'paid', paid_at = COALESCE(paid_at, NOW()) WHERE id = $1`
+	const query = `UPDATE dunning_attempts SET status = 'paid', sent_at = COALESCE(sent_at, NOW()), paid_at = COALESCE(paid_at, NOW()) WHERE id = $1`
 	_, err := r.db.Exec(ctx, query, attemptID)
 	return err
 }
@@ -125,7 +145,7 @@ func (r *Repository) MarkAttemptPaid(ctx context.Context, attemptID uuid.UUID) e
 func (r *Repository) findReusableAttempt(ctx context.Context, params CreateAttemptParams) (*Attempt, error) {
 	const query = `
 SELECT id, user_id, subscription_id, customer_id, status, reason, period_end, expires_at,
-	sent_at, paid_at, canceled_at, metadata, created_at, updated_at
+	sent_at, clicked_at, paid_at, canceled_at, metadata, created_at, updated_at
 FROM dunning_attempts
 WHERE user_id = $1
   AND subscription_id = $2
@@ -156,7 +176,7 @@ func (r *Repository) createAttempt(ctx context.Context, params CreateAttemptPara
 INSERT INTO dunning_attempts (user_id, subscription_id, customer_id, status, reason, period_end, expires_at, metadata)
 VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7)
 RETURNING id, user_id, subscription_id, customer_id, status, reason, period_end, expires_at,
-	sent_at, paid_at, canceled_at, metadata, created_at, updated_at`
+	sent_at, clicked_at, paid_at, canceled_at, metadata, created_at, updated_at`
 
 	attempt, err := scanAttempt(r.db.QueryRow(
 		ctx,
@@ -180,7 +200,7 @@ func (r *Repository) createToken(ctx context.Context, params CreateTokenParams) 
 	const query = `
 INSERT INTO dunning_tokens (user_id, dunning_attempt_id, token_hash, expires_at)
 VALUES ($1, $2, $3, $4)
-RETURNING id, user_id, dunning_attempt_id, token_hash, expires_at, used_at, created_at`
+RETURNING id, user_id, dunning_attempt_id, token_hash, expires_at, revoked_at, last_used_at, created_at, updated_at`
 
 	token, err := scanToken(r.db.QueryRow(ctx, query, params.UserID, params.DunningAttemptID, params.TokenHash, params.ExpiresAt))
 	if err != nil {
@@ -204,6 +224,7 @@ func scanAttempt(row pgx.Row) (*Attempt, error) {
 		&attempt.PeriodEnd,
 		&attempt.ExpiresAt,
 		&attempt.SentAt,
+		&attempt.ClickedAt,
 		&attempt.PaidAt,
 		&attempt.CanceledAt,
 		&metadataBytes,
@@ -233,8 +254,10 @@ func scanToken(row pgx.Row) (*Token, error) {
 		&token.DunningAttemptID,
 		&token.TokenHash,
 		&token.ExpiresAt,
-		&token.UsedAt,
+		&token.RevokedAt,
+		&token.LastUsedAt,
 		&token.CreatedAt,
+		&token.UpdatedAt,
 	); err != nil {
 		return nil, err
 	}
@@ -252,8 +275,10 @@ func scanTokenWithAttempt(row pgx.Row) (*TokenWithAttempt, error) {
 		&result.Token.DunningAttemptID,
 		&result.Token.TokenHash,
 		&result.Token.ExpiresAt,
-		&result.Token.UsedAt,
+		&result.Token.RevokedAt,
+		&result.Token.LastUsedAt,
 		&result.Token.CreatedAt,
+		&result.Token.UpdatedAt,
 		&result.Attempt.ID,
 		&result.Attempt.UserID,
 		&result.Attempt.SubscriptionID,
@@ -263,6 +288,7 @@ func scanTokenWithAttempt(row pgx.Row) (*TokenWithAttempt, error) {
 		&result.Attempt.PeriodEnd,
 		&result.Attempt.ExpiresAt,
 		&result.Attempt.SentAt,
+		&result.Attempt.ClickedAt,
 		&result.Attempt.PaidAt,
 		&result.Attempt.CanceledAt,
 		&metadataBytes,
