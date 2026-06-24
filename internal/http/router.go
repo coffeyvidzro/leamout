@@ -6,6 +6,7 @@ import (
 
 	"github.com/cuffeyvidzro/leamout/internal/http/middleware"
 	"github.com/cuffeyvidzro/leamout/internal/modules/auth"
+	"github.com/cuffeyvidzro/leamout/internal/modules/checkout"
 	"github.com/cuffeyvidzro/leamout/internal/modules/customer"
 	"github.com/cuffeyvidzro/leamout/internal/modules/product"
 	"github.com/cuffeyvidzro/leamout/internal/modules/session"
@@ -29,6 +30,7 @@ func (s *Server) Router() *gin.Engine {
 	router.Use(middleware.CORS(s.cfg.CORSOrigins, s.cfg.IsDevelopment()))
 
 	auth.RegisterRoutes(router, s.authHandler())
+	checkout.RegisterRoutes(router, s.checkoutHandler())
 	authMiddleware := middleware.AuthMiddleware(s.sessionService())
 	session.RegisterRoutes(router, s.sessionHandler(), authMiddleware)
 	user.RegisterRoutes(router, s.userHandler(), authMiddleware)
