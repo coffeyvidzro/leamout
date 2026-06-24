@@ -7,6 +7,7 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/http/middleware"
 	"github.com/cuffeyvidzro/leamout/internal/modules/auth"
 	"github.com/cuffeyvidzro/leamout/internal/modules/session"
+	"github.com/cuffeyvidzro/leamout/internal/modules/user"
 	"github.com/gin-gonic/gin"
 )
 
@@ -25,7 +26,9 @@ func (s *Server) Router() *gin.Engine {
 	router.Use(middleware.CORS(s.cfg.CORSOrigins, s.cfg.IsDevelopment()))
 
 	auth.RegisterRoutes(router, s.authHandler())
-	session.RegisterRoutes(router, s.sessionHandler(), middleware.AuthMiddleware(s.sessionService()))
+	authMiddleware := middleware.AuthMiddleware(s.sessionService())
+	session.RegisterRoutes(router, s.sessionHandler(), authMiddleware)
+	user.RegisterRoutes(router, s.userHandler(), authMiddleware)
 
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(nethttp.StatusOK, gin.H{

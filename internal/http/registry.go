@@ -7,6 +7,7 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/modules/auth"
 	"github.com/cuffeyvidzro/leamout/internal/modules/auth/oauth"
 	"github.com/cuffeyvidzro/leamout/internal/modules/session"
+	"github.com/cuffeyvidzro/leamout/internal/modules/user"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
@@ -45,6 +46,13 @@ func (s *Server) sessionHandler() *session.Handler {
 func (s *Server) sessionService() *session.Service {
 	repository := session.NewRepository(s.postgres, s.redis)
 	return session.NewService(repository)
+}
+
+func (s *Server) userHandler() *user.Handler {
+	repository := user.NewRepository(s.postgres)
+	service := user.NewService(repository)
+
+	return user.NewHandler(service)
 }
 
 func (s *Server) oauthRegistry() *oauth.Registry {
