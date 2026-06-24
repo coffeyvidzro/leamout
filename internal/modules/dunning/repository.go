@@ -49,6 +49,53 @@ func (r *Repository) GetAttempt(ctx context.Context, params CreateAttemptParams)
 	return r.findReusableAttempt(ctx, params)
 }
 
+func (r *Repository) List(ctx context.Context, userID uuid.UUID) ([]Attempt, error) {
+	const query = `
+SELECT id, user_id, subscription_id, customer_id, status, reason, period_end, expires_at,
+	sent_at, clicked_at, paid_at, canceled_at, metadata, created_at, updated_at
+FROM dunning_attempts
+WHERE user_id = $1
+ORDER BY created_at DESC`
+
+	rows, err := r.db.Query(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list dunning attempts: %w", err)
+	}
+	defer rows.Close()
+
+	attempts := make([]Attempt, 0)
+	for rows.Next() {
+		attempt, err := scanAttempt(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan dunning attempt: %w", err)
+		}
+		attempts = append(attempts, *attempt)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate dunning attempts: %w", err)
+	}
+
+	return attempts, nil
+}
+
+func (r *Repository) Get(ctx context.Context, userID, attemptID uuid.UUID) (*Attempt, error) {
+	const query = `
+SELECT id, user_id, subscription_id, customer_id, status, reason, period_end, expires_at,
+	sent_at, clicked_at, paid_at, canceled_at, metadata, created_at, updated_at
+FROM dunning_attempts
+WHERE user_id = $1 AND id = $2`
+
+	attempt, err := scanAttempt(r.db.QueryRow(ctx, query, userID, attemptID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get dunning attempt: %w", err)
+	}
+
+	return attempt, nil
+}
+
 func (r *Repository) CreateToken(ctx context.Context, params CreateTokenParams) (*Token, error) {
 	token, err := r.createToken(ctx, params)
 	if err == nil {
@@ -59,6 +106,26 @@ func (r *Repository) CreateToken(ctx context.Context, params CreateTokenParams) 
 	}
 
 	return nil, err
+}
+
+func (r *Repository) GetCheckoutDetails(ctx context.Context, userID, attemptID uuid.UUID) (*CheckoutDetails, error) {
+	const query = `
+SELECT p.unit_amount, p.currency
+FROM dunning_attempts a
+JOIN subscriptions s ON s.user_id = a.user_id AND s.id = a.subscription_id
+JOIN prices p ON p.user_id = s.user_id AND p.id = s.price_id
+WHERE a.user_id = $1 AND a.id = $2`
+
+	var details CheckoutDetails
+	err := r.db.QueryRow(ctx, query, userID, attemptID).Scan(&details.Amount, &details.Currency)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get dunning checkout details: %w", err)
+	}
+
+	return &details, nil
 }
 
 func (r *Repository) GetByTokenHash(ctx context.Context, tokenHash string) (*TokenWithAttempt, error) {

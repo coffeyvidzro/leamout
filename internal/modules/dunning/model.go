@@ -72,3 +72,8 @@ type TokenWithAttempt struct {
 	Token   Token   `json:"token"`
 	Attempt Attempt `json:"attempt"`
 }
+
+type CheckoutDetails struct {
+	Amount   int64
+	Currency string
+}

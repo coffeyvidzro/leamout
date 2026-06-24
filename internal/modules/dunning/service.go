@@ -6,9 +6,11 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/cuffeyvidzro/leamout/internal/modules/checkout"
 	"github.com/google/uuid"
 )
 
@@ -18,12 +20,15 @@ const (
 	tokenBytes        = 32
 )
 
+var ErrInvalidRecoveryLink = errors.New("invalid or expired recovery link")
+
 type Service struct {
-	repository *Repository
+	repository      *Repository
+	checkoutService *checkout.Service
 }
 
-func NewService(repository *Repository) *Service {
-	return &Service{repository: repository}
+func NewService(repository *Repository, checkoutService *checkout.Service) *Service {
+	return &Service{repository: repository, checkoutService: checkoutService}
 }
 
 func (s *Service) CreateOrReuseAttempt(ctx context.Context, params CreateAttemptParams) (*Attempt, error) {
@@ -61,8 +66,61 @@ func (s *Service) CreateToken(ctx context.Context, attempt *Attempt) (string, *T
 	return rawToken, token, nil
 }
 
+func (s *Service) List(ctx context.Context, userID uuid.UUID) ([]Attempt, error) {
+	return s.repository.List(ctx, userID)
+}
+
+func (s *Service) Get(ctx context.Context, userID, attemptID uuid.UUID) (*Attempt, error) {
+	return s.repository.Get(ctx, userID, attemptID)
+}
+
 func (s *Service) GetByToken(ctx context.Context, rawToken string) (*TokenWithAttempt, error) {
 	return s.repository.GetByTokenHash(ctx, HashToken(rawToken))
+}
+
+func (s *Service) OpenRecoveryLink(ctx context.Context, rawToken string) (*checkout.Session, error) {
+	if s.checkoutService == nil {
+		return nil, errors.New("checkout service is not configured")
+	}
+
+	result, err := s.RecordTokenUse(ctx, rawToken)
+	if err != nil {
+		return nil, err
+	}
+	if !canOpenRecoveryAttempt(result.Attempt) {
+		return nil, ErrInvalidRecoveryLink
+	}
+
+	details, err := s.repository.GetCheckoutDetails(ctx, result.Attempt.UserID, result.Attempt.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	expiresAt := time.Now().UTC().Add(30 * time.Minute)
+	if result.Token.ExpiresAt.Before(expiresAt) {
+		expiresAt = result.Token.ExpiresAt
+	}
+
+	label := "Renew subscription"
+	subscriptionID := result.Attempt.SubscriptionID
+	metadata := map[string]any{
+		"source":             "sms_dunning",
+		"dunning_attempt_id": result.Attempt.ID.String(),
+		"dunning_token_id":   result.Token.ID.String(),
+		"subscription_id":    result.Attempt.SubscriptionID.String(),
+	}
+
+	return s.checkoutService.Create(ctx, result.Attempt.UserID, checkout.CreateRequest{
+		CustomerID:     result.Attempt.CustomerID,
+		SubscriptionID: &subscriptionID,
+		Mode:           checkout.ModeRenewal,
+		Source:         checkout.SourceDunning,
+		Label:          &label,
+		Amount:         details.Amount,
+		Currency:       details.Currency,
+		ExpiresAt:      expiresAt,
+		Metadata:       metadata,
+	})
 }
 
 func (s *Service) RecordTokenUse(ctx context.Context, rawToken string) (*TokenWithAttempt, error) {
@@ -96,6 +154,14 @@ func (s *Service) MarkAttemptPaid(ctx context.Context, attemptID uuid.UUID) erro
 func HashToken(rawToken string) string {
 	sum := sha256.Sum256([]byte(rawToken))
 	return hex.EncodeToString(sum[:])
+}
+
+func canOpenRecoveryAttempt(attempt Attempt) bool {
+	if attempt.Status != AttemptStatusPending && attempt.Status != AttemptStatusSent {
+		return false
+	}
+
+	return attempt.ExpiresAt.After(time.Now().UTC())
 }
 
 func newToken(size int) (string, error) {
