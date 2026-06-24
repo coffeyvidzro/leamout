@@ -79,6 +79,35 @@ The prototype is successful when we can do this locally:
 9. Click **Mock Pay**.
 10. Confirm the subscription expiry date is extended by the configured billing period.
 
+## Local dunning demo
+
+The demo harness seeds a complete local renewal scenario, runs the scanner, lets
+the worker emit a mock SMS link, completes checkout with the raw token from that
+link, and prints the resulting lifecycle state.
+
+Start PostgreSQL and Redis first:
+
+```bash
+docker compose -f compose.yml up -d postgres redis
+```
+
+Then run the full scripted flow:
+
+```bash
+make demo-dunning-flow
+```
+
+You can also run each step manually:
+
+```bash
+make demo-migrate
+make demo-seed
+make demo-scan
+timeout 10s go run ./cmd/worker
+make demo-complete TOKEN=<token-from-worker-output>
+make demo-verify
+```
+
 ## Suggested prototype modules
 
 ### Existing/foundation modules
