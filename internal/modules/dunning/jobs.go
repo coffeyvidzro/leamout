@@ -32,6 +32,16 @@ func (SendReminderArgs) InsertOpts() river.InsertOpts {
 	}
 }
 
+func RegisterReminderJobKind(workers *river.Workers) {
+	river.AddWorker(workers, river.WorkFunc(func(context.Context, *river.Job[SendReminderArgs]) error {
+		return fmt.Errorf("%s worker is not registered in this process", SendReminderJobKind)
+	}))
+}
+
+func RegisterSendReminderWorker(workers *river.Workers, service *Service, sender provider.Provider, baseURL string, log *slog.Logger) {
+	river.AddWorker(workers, NewSendReminderWorker(service, sender, baseURL, log))
+}
+
 type SendReminderWorker struct {
 	river.WorkerDefaults[SendReminderArgs]
 

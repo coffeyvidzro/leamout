@@ -66,3 +66,8 @@ func (c *Client) Start(ctx context.Context) error {
 func (c *Client) Stop(ctx context.Context) error {
 	return c.River.Stop(ctx)
 }
+
+func (c *Client) Insert(ctx context.Context, args river.JobArgs, opts *river.InsertOpts) error {
+	_, err := c.River.Insert(ctx, args, opts)
+	return err
+}

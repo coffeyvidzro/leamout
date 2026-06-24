@@ -21,7 +21,6 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/platform/queue"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivermigrate"
 )
@@ -224,7 +223,7 @@ RETURNING id`, userID, customerID, priceID, periodStart, periodEnd).Scan(&subscr
 
 func scan(ctx context.Context, db *pgxpool.Pool, cfg *config.Config, log *slog.Logger) error {
 	workers := queue.NewWorkerRegistry()
-	river.AddWorker(workers, dunning.NewSendReminderWorker(nil, nil, cfg.BaseURL, log))
+	dunning.RegisterReminderJobKind(workers)
 
 	queueClient, err := queue.NewClient(db, workers, queue.Config{Enabled: false})
 	if err != nil {
@@ -232,7 +231,9 @@ func scan(ctx context.Context, db *pgxpool.Pool, cfg *config.Config, log *slog.L
 	}
 
 	subscriptions := subscription.NewService(subscription.NewRepository(db))
-	scanner := dunning.NewScanner(subscriptions, queueClient.River, log)
+	scanner := dunning.NewScanner(subscriptions, func(ctx context.Context, args dunning.SendReminderArgs) error {
+		return queueClient.Insert(ctx, args, nil)
+	}, log)
 	result, err := scanner.RunOnce(ctx)
 	if err != nil {
 		return err

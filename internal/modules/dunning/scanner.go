@@ -7,18 +7,18 @@ import (
 	"time"
 
 	"github.com/cuffeyvidzro/leamout/internal/modules/subscription"
-	"github.com/jackc/pgx/v5"
-	"github.com/riverqueue/river"
 )
 
 const DefaultScanWindow = 72 * time.Hour
 
 type Scanner struct {
 	subscriptions *subscription.Service
-	riverClient   *river.Client[pgx.Tx]
+	enqueue       EnqueueReminderFunc
 	window        time.Duration
 	log           *slog.Logger
 }
+
+type EnqueueReminderFunc func(context.Context, SendReminderArgs) error
 
 type ScannerResult struct {
 	WindowEnd time.Time
@@ -27,10 +27,10 @@ type ScannerResult struct {
 	Skipped   int
 }
 
-func NewScanner(subscriptions *subscription.Service, riverClient *river.Client[pgx.Tx], log *slog.Logger) *Scanner {
+func NewScanner(subscriptions *subscription.Service, enqueue EnqueueReminderFunc, log *slog.Logger) *Scanner {
 	return &Scanner{
 		subscriptions: subscriptions,
-		riverClient:   riverClient,
+		enqueue:       enqueue,
 		window:        DefaultScanWindow,
 		log:           log,
 	}
@@ -40,8 +40,8 @@ func (s *Scanner) RunOnce(ctx context.Context) (*ScannerResult, error) {
 	if s.subscriptions == nil {
 		return nil, fmt.Errorf("subscription service is not configured")
 	}
-	if s.riverClient == nil {
-		return nil, fmt.Errorf("river client is not configured")
+	if s.enqueue == nil {
+		return nil, fmt.Errorf("dunning reminder enqueue function is not configured")
 	}
 
 	windowEnd := time.Now().UTC().Add(s.window)
@@ -60,12 +60,12 @@ func (s *Scanner) RunOnce(ctx context.Context) (*ScannerResult, error) {
 			continue
 		}
 
-		_, err := s.riverClient.Insert(ctx, SendReminderArgs{
+		err := s.enqueue(ctx, SendReminderArgs{
 			UserID:           candidate.UserID,
 			SubscriptionID:   candidate.ID,
 			CustomerID:       *candidate.CustomerID,
 			CurrentPeriodEnd: candidate.CurrentPeriodEnd,
-		}, nil)
+		})
 		if err != nil {
 			return nil, fmt.Errorf("enqueue dunning reminder for subscription %s: %w", candidate.ID, err)
 		}

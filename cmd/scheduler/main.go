@@ -14,7 +14,6 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/platform/database"
 	"github.com/cuffeyvidzro/leamout/internal/platform/logger"
 	"github.com/cuffeyvidzro/leamout/internal/platform/queue"
-	"github.com/riverqueue/river"
 )
 
 func main() {
@@ -41,7 +40,7 @@ func main() {
 	defer postgresPool.Close()
 
 	workers := queue.NewWorkerRegistry()
-	river.AddWorker(workers, dunning.NewSendReminderWorker(nil, nil, cfg.BaseURL, log))
+	dunning.RegisterReminderJobKind(workers)
 
 	riverClient, err := queue.NewClient(postgresPool, workers, queue.Config{Enabled: false})
 	if err != nil {
@@ -71,7 +70,9 @@ func main() {
 	}
 
 	subscriptionService := subscription.NewService(subscription.NewRepository(postgresPool))
-	scanner := dunning.NewScanner(subscriptionService, riverClient.River, log)
+	scanner := dunning.NewScanner(subscriptionService, func(ctx context.Context, args dunning.SendReminderArgs) error {
+		return riverClient.Insert(ctx, args, nil)
+	}, log)
 
 	_, err = scheduler.AddJob(platformcron.ScheduleHourly, func() {
 		if _, err := scanner.RunOnce(context.Background()); err != nil {
