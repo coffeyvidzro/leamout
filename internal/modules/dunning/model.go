@@ -77,3 +77,8 @@ type CheckoutDetails struct {
 	Amount   int64
 	Currency string
 }
+
+type ReminderDetails struct {
+	CustomerPhone    string
+	CurrentPeriodEnd time.Time
+}

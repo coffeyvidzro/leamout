@@ -128,6 +128,25 @@ WHERE a.user_id = $1 AND a.id = $2`
 	return &details, nil
 }
 
+func (r *Repository) GetReminderDetails(ctx context.Context, userID, subscriptionID uuid.UUID) (*ReminderDetails, error) {
+	const query = `
+SELECT c.phone, s.current_period_end
+FROM subscriptions s
+JOIN customers c ON c.user_id = s.user_id AND c.id = s.customer_id
+WHERE s.user_id = $1 AND s.id = $2`
+
+	var details ReminderDetails
+	err := r.db.QueryRow(ctx, query, userID, subscriptionID).Scan(&details.CustomerPhone, &details.CurrentPeriodEnd)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get dunning reminder details: %w", err)
+	}
+
+	return &details, nil
+}
+
 func (r *Repository) GetByTokenHash(ctx context.Context, tokenHash string) (*TokenWithAttempt, error) {
 	const query = `
 SELECT
@@ -186,6 +205,20 @@ func (r *Repository) RevokeToken(ctx context.Context, tokenHash string) error {
 	}
 	if result.RowsAffected() == 0 {
 		return ErrNotFound
+	}
+
+	return nil
+}
+
+func (r *Repository) RevokeAttemptTokens(ctx context.Context, userID, attemptID uuid.UUID) error {
+	_, err := r.db.Exec(
+		ctx,
+		`UPDATE dunning_tokens SET revoked_at = COALESCE(revoked_at, NOW()) WHERE user_id = $1 AND dunning_attempt_id = $2 AND revoked_at IS NULL`,
+		userID,
+		attemptID,
+	)
+	if err != nil {
+		return fmt.Errorf("revoke dunning attempt tokens: %w", err)
 	}
 
 	return nil

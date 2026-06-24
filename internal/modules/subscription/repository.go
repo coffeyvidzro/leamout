@@ -142,6 +142,7 @@ SELECT s.id, s.user_id, s.customer_id, s.current_period_end
 FROM subscriptions s
 WHERE s.status = 'active'
   AND s.cancel_at_period_end = FALSE
+  AND s.customer_id IS NOT NULL
   AND s.current_period_end > NOW()
   AND s.current_period_end <= $1
   AND NOT EXISTS (
