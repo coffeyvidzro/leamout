@@ -9,7 +9,7 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/modules/checkout"
 	"github.com/cuffeyvidzro/leamout/internal/modules/dunning"
 	"github.com/cuffeyvidzro/leamout/internal/modules/subscription"
-	"github.com/cuffeyvidzro/leamout/internal/sms/provider"
+	"github.com/cuffeyvidzro/leamout/internal/sms"
 	"github.com/cuffeyvidzro/leamout/internal/testutil/dbtest"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -26,12 +26,10 @@ type fixture struct {
 }
 
 type fakeSender struct {
-	messages []provider.Message
+	messages []sms.Message
 }
 
-func (s *fakeSender) Name() string { return "fake" }
-
-func (s *fakeSender) Send(_ context.Context, msg provider.Message) error {
+func (s *fakeSender) Send(_ context.Context, msg sms.Message) error {
 	s.messages = append(s.messages, msg)
 	return nil
 }

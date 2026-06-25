@@ -29,7 +29,7 @@ const (
 	demoUserEmail     = "demo@leamout.local"
 	demoUserName      = "Leamout Demo Merchant"
 	demoCustomerName  = "Ama Demo Customer"
-	demoCustomerPhone = "+233501234567"
+	demoCustomerPhone = "+2348012345678"
 	demoProductName   = "Demo Monthly Plan"
 	demoPriceNickname = "Demo Monthly GHS"
 	demoCurrency      = "GHS"
@@ -179,6 +179,11 @@ INSERT INTO users (name, email, email_verified, status)
 VALUES ($1, $2, TRUE, 'active')
 RETURNING id`, demoUserName, demoUserEmail).Scan(&userID); err != nil {
 		return fmt.Errorf("insert demo user: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+INSERT INTO credits (user_id, balance, currency)
+VALUES ($1, 1000, 'GHS')`, userID); err != nil {
+		return fmt.Errorf("insert demo credits: %w", err)
 	}
 	if err := tx.QueryRow(ctx, `
 INSERT INTO products (user_id, name, description, active, metadata)

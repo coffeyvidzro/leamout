@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cuffeyvidzro/leamout/internal/sms/provider"
+	"github.com/cuffeyvidzro/leamout/internal/sms"
 	"github.com/google/uuid"
 	"github.com/riverqueue/river"
 )
@@ -38,7 +38,11 @@ func RegisterReminderJobKind(workers *river.Workers) {
 	}))
 }
 
-func RegisterSendReminderWorker(workers *river.Workers, service *Service, sender provider.Provider, baseURL string, log *slog.Logger) {
+type SMSSender interface {
+	Send(context.Context, sms.Message) error
+}
+
+func RegisterSendReminderWorker(workers *river.Workers, service *Service, sender SMSSender, baseURL string, log *slog.Logger) {
 	river.AddWorker(workers, NewSendReminderWorker(service, sender, baseURL, log))
 }
 
@@ -46,12 +50,12 @@ type SendReminderWorker struct {
 	river.WorkerDefaults[SendReminderArgs]
 
 	service *Service
-	sender  provider.Provider
+	sender  SMSSender
 	baseURL string
 	log     *slog.Logger
 }
 
-func NewSendReminderWorker(service *Service, sender provider.Provider, baseURL string, log *slog.Logger) *SendReminderWorker {
+func NewSendReminderWorker(service *Service, sender SMSSender, baseURL string, log *slog.Logger) *SendReminderWorker {
 	return &SendReminderWorker{
 		service: service,
 		sender:  sender,
@@ -106,9 +110,15 @@ func (w *SendReminderWorker) Work(ctx context.Context, job *river.Job[SendRemind
 
 	link := w.recoveryLink(rawToken)
 	message := fmt.Sprintf("Your Leamout subscription expires soon. Renew here: %s", link)
-	if err := w.sender.Send(ctx, provider.Message{
-		To:      details.CustomerPhone,
-		Content: message,
+	if err := w.sender.Send(ctx, sms.Message{
+		UserID:    job.Args.UserID,
+		To:        details.CustomerPhone,
+		Content:   message,
+		Reference: "dunning:" + attempt.ID.String(),
+		Metadata: map[string]any{
+			"dunning_attempt_id": attempt.ID.String(),
+			"subscription_id":    job.Args.SubscriptionID.String(),
+		},
 	}); err != nil {
 		return fmt.Errorf("send dunning sms: %w", err)
 	}
