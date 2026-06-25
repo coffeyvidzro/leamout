@@ -29,8 +29,10 @@ func (s *Server) BuildEngine() *gin.Engine {
 	router.Use(gin.Recovery())
 	router.Use(middleware.RequestContext())
 	router.Use(middleware.RequestLogger(s.log))
+	router.Use(middleware.Arcjet(s.arcjet, s.log))
 	router.Use(middleware.Secure(s.cfg.IsDevelopment()))
 	router.Use(middleware.CORS(s.cfg.CORSOrigins, s.cfg.IsDevelopment()))
+	router.Use(middleware.Geolocation(s.geolocator, s.log))
 
 	// Initialize Repositories
 

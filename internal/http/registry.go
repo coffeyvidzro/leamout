@@ -3,25 +3,38 @@ package http
 import (
 	"log/slog"
 
+	"github.com/arcjet/arcjet-go"
 	"github.com/cuffeyvidzro/leamout/internal/config"
 	"github.com/cuffeyvidzro/leamout/internal/modules/auth/oauth"
+	"github.com/cuffeyvidzro/leamout/internal/platform/geoip"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
 
 type Server struct {
-	cfg    *config.Config
-	log    *slog.Logger
-	pgPool *pgxpool.Pool
-	redis  *redis.Client
+	cfg        *config.Config
+	log        *slog.Logger
+	pgPool     *pgxpool.Pool
+	redis      *redis.Client
+	geolocator *geoip.Geolocator
+	arcjet     *arcjet.Client
 }
 
-func NewServer(cfg *config.Config, log *slog.Logger, pgPool *pgxpool.Pool, redis *redis.Client) *Server {
+func NewServer(
+	cfg *config.Config,
+	log *slog.Logger,
+	pgPool *pgxpool.Pool,
+	redis *redis.Client,
+	geolocator *geoip.Geolocator,
+	arcjetClient *arcjet.Client,
+) *Server {
 	return &Server{
-		cfg:    cfg,
-		log:    log,
-		pgPool: pgPool,
-		redis:  redis,
+		cfg:        cfg,
+		log:        log,
+		pgPool:     pgPool,
+		redis:      redis,
+		geolocator: geolocator,
+		arcjet:     arcjetClient,
 	}
 }
 

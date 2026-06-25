@@ -12,7 +12,9 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/config"
 	apphttp "github.com/cuffeyvidzro/leamout/internal/http"
 	"github.com/cuffeyvidzro/leamout/internal/platform/database"
+	"github.com/cuffeyvidzro/leamout/internal/platform/geoip"
 	"github.com/cuffeyvidzro/leamout/internal/platform/logger"
+	"github.com/cuffeyvidzro/leamout/internal/platform/security"
 )
 
 func main() {
@@ -44,7 +46,32 @@ func main() {
 		}
 	}()
 
-	serverRegistry := apphttp.NewServer(cfg, log, postgresPool, redisClient)
+	geolocator, err := geoip.NewGeolocationService(cfg, log)
+	if err != nil {
+		log.Error("failed to initialize geolocation", slog.Any("error", err))
+		os.Exit(1)
+	}
+	defer func() {
+		if err := geolocator.Close(); err != nil {
+			log.Error("failed to close geolocator", slog.Any("error", err))
+		}
+	}()
+
+	arcjetClient, err := security.NewClient(cfg.ArcjetKey)
+	if err != nil {
+		log.Error("failed to initialize arcjet", slog.Any("error", err))
+		os.Exit(1)
+	}
+
+	serverRegistry := apphttp.NewServer(
+		cfg,
+		log,
+		postgresPool,
+		redisClient,
+		geolocator,
+		arcjetClient,
+	)
+
 	router := serverRegistry.BuildEngine()
 
 	server := &http.Server{

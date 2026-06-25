@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
 	"time"
@@ -59,6 +58,17 @@ func RequestLogger(log *slog.Logger) gin.HandlerFunc {
 			slog.String("user_agent", c.GetHeader("User-Agent")),
 		}
 
+		if geo, ok := GetGeolocation(c); ok {
+			attrs = append(attrs,
+				slog.String("geo_ip", geo.IP),
+				slog.String("geo_country_code", geo.CountryCode),
+				slog.String("geo_country_name", geo.CountryName),
+				slog.String("geo_city", geo.City),
+				slog.String("geo_timezone", geo.TimeZone),
+				slog.String("geo_source", geo.Source),
+			)
+		}
+
 		if len(c.Errors) > 0 {
 			attrs = append(attrs, slog.String("errors", c.Errors.String()))
 		}
@@ -71,6 +81,6 @@ func RequestLogger(log *slog.Logger) gin.HandlerFunc {
 			level = slog.LevelWarn
 		}
 
-		log.LogAttrs(context.Background(), level, "http request completed", attrs...)
+		log.LogAttrs(c.Request.Context(), level, "http request completed", attrs...)
 	}
 }

@@ -28,13 +28,16 @@ type ProviderConfig struct {
 }
 
 type Config struct {
-	AppEnv       string   `env:"APP_ENV" envDefault:"development"`
-	HTTPPort     string   `env:"HTTP_PORT" envDefault:"8080"`
-	BaseURL      string   `env:"BASE_URL" envDefault:"http://localhost:8080"`
-	ShortBaseURL string   `env:"SHORT_BASE_URL" envDefault:"http://localhost:3000"`
-	DatabaseURL  string   `env:"DATABASE_URL" envDefault:"postgres://postgres:postgres@localhost:5432/leamout?sslmode=disable"`
-	RedisURL     string   `env:"REDIS_URL" envDefault:"redis://localhost:6379"`
-	CORSOrigins  []string `env:"CORS_ORIGINS" envSeparator:"," envDefault:"http://localhost:3000,http://127.0.0.1:3000"`
+	AppEnv            string   `env:"APP_ENV" envDefault:"development"`
+	HTTPPort          string   `env:"HTTP_PORT" envDefault:"8080"`
+	BaseURL           string   `env:"BASE_URL" envDefault:"http://localhost:8080"`
+	ShortBaseURL      string   `env:"SHORT_BASE_URL" envDefault:"http://localhost:3000"`
+	DatabaseURL       string   `env:"DATABASE_URL" envDefault:"postgres://postgres:postgres@localhost:5432/leamout?sslmode=disable"`
+	RedisURL          string   `env:"REDIS_URL" envDefault:"redis://localhost:6379"`
+	ArcjetKey         string   `env:"ARCJET_KEY,required"`
+	IPInfoToken       string   `env:"IPINFO_TOKEN,required"`
+	GeoIPDatabasePath string   `env:"GEOIP_DATABASE_PATH" envDefault:"./assets/GeoLite2-City.mmdb"`
+	CORSOrigins       []string `env:"CORS_ORIGINS" envSeparator:"," envDefault:"http://localhost:3000,http://127.0.0.1:3000"`
 
 	Queue QueueConfig `envPrefix:"QUEUE_"`
 	Cron  CronConfig  `envPrefix:"CRON_"`

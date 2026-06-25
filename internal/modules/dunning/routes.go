@@ -7,7 +7,7 @@ func RegisterRoutes(router gin.IRouter, handler *Handler, authMiddleware gin.Han
 	router.GET("/dunning/:token", handler.OpenRecoveryLink)
 
 	// Protected merchant visibility. Dunning attempts are system-created by jobs.
-	dunning := router.Group("/dunnings")
+	dunning := router.Group("/dunning-events")
 	dunning.Use(authMiddleware)
 
 	dunning.GET("", handler.List)
