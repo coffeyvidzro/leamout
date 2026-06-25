@@ -51,6 +51,10 @@ ON credit_ledger(reference);
 CREATE INDEX idx_credit_ledger_destination
 ON credit_ledger(destination);
 
+CREATE UNIQUE INDEX idx_credit_ledger_user_reference_type
+ON credit_ledger(user_id, reference, type)
+WHERE reference IS NOT NULL;
+
 CREATE TRIGGER credits_set_updated_at
 BEFORE UPDATE ON credits
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
@@ -58,6 +62,7 @@ FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 -- +goose Down
 DROP TRIGGER IF EXISTS credits_set_updated_at ON credits;
 
+DROP INDEX IF EXISTS idx_credit_ledger_user_reference_type;
 DROP INDEX IF EXISTS idx_credit_ledger_destination;
 DROP INDEX IF EXISTS idx_credit_ledger_reference;
 DROP INDEX IF EXISTS idx_credit_ledger_user_created;
