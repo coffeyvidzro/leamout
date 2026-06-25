@@ -22,6 +22,8 @@ var (
 	ErrUserRequired      = errors.New("sms user is required")
 )
 
+const senderName = "Leamout"
+
 type CreditLedger interface {
 	Debit(ctx context.Context, params credits.DebitParams) (*credits.Balance, error)
 	Refund(ctx context.Context, params credits.RefundParams) (*credits.Balance, error)
@@ -32,18 +34,17 @@ type Router interface {
 }
 
 type Service struct {
-	credits     CreditLedger
-	router      Router
-	providers   map[string]provider.Provider
-	defaultFrom string
+	credits   CreditLedger
+	router    Router
+	providers map[string]provider.Provider
 }
 
 func NewService(credits CreditLedger, router Router, providers map[string]provider.Provider, cfg Config) *Service {
+	_ = cfg
 	return &Service{
-		credits:     credits,
-		router:      router,
-		providers:   providers,
-		defaultFrom: strings.TrimSpace(cfg.DefaultFrom),
+		credits:   credits,
+		router:    router,
+		providers: providers,
 	}
 }
 
@@ -117,13 +118,10 @@ func (s *Service) normalize(msg Message) (Message, error) {
 		return msg, ErrUserRequired
 	}
 	msg.To = strings.TrimSpace(msg.To)
-	msg.From = strings.TrimSpace(msg.From)
+	msg.From = senderName
 	msg.Content = strings.TrimSpace(msg.Content)
 	msg.Reference = strings.TrimSpace(msg.Reference)
 
-	if msg.From == "" {
-		msg.From = s.defaultFrom
-	}
 	if msg.To == "" {
 		return msg, ErrRecipientRequired
 	}

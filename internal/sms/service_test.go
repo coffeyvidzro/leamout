@@ -32,7 +32,7 @@ func (c *fakeCredits) Refund(_ context.Context, params credits.RefundParams) (*c
 	return &credits.Balance{UserID: params.UserID, Balance: 1000 + params.Amount, Currency: credits.CurrencyGHS}, nil
 }
 
-func TestServiceRoutesDebitsAppliesDefaultSenderAndTrimsMessage(t *testing.T) {
+func TestServiceRoutesDebitsAppliesHardcodedSenderAndTrimsMessage(t *testing.T) {
 	userID := uuid.New()
 	creditSvc := &fakeCredits{}
 	client := mock.NewClient(false)
@@ -46,6 +46,7 @@ func TestServiceRoutesDebitsAppliesDefaultSenderAndTrimsMessage(t *testing.T) {
 	err := service.Send(context.Background(), sms.Message{
 		UserID:  userID,
 		To:      " +234 801-234-5678 ",
+		From:    "Not Leamout",
 		Content: " Renew here ",
 	})
 	if err != nil {
@@ -57,7 +58,7 @@ func TestServiceRoutesDebitsAppliesDefaultSenderAndTrimsMessage(t *testing.T) {
 		t.Fatalf("expected one message, got %d", len(messages))
 	}
 	if messages[0].Message.From != "Leamout" {
-		t.Fatalf("expected default sender, got %q", messages[0].Message.From)
+		t.Fatalf("expected hardcoded sender, got %q", messages[0].Message.From)
 	}
 	if messages[0].Message.To != "+2348012345678" {
 		t.Fatalf("expected normalized recipient, got %q", messages[0].Message.To)

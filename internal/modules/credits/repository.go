@@ -43,6 +43,35 @@ WHERE user_id = $1`
 	return balance, nil
 }
 
+func (r *Repository) ListLedger(ctx context.Context, params ListLedgerParams) ([]LedgerEntry, error) {
+	const query = `
+SELECT id, user_id, type, amount, balance_after, provider, destination, reference, description, metadata, created_at
+FROM credit_ledger
+WHERE user_id = $1
+ORDER BY created_at DESC
+LIMIT $2 OFFSET $3`
+
+	rows, err := r.db.Query(ctx, query, params.UserID, params.Limit, params.Offset)
+	if err != nil {
+		return nil, fmt.Errorf("list credit ledger: %w", err)
+	}
+	defer rows.Close()
+
+	var entries []LedgerEntry
+	for rows.Next() {
+		entry, err := scanLedgerEntry(rows)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate credit ledger: %w", err)
+	}
+
+	return entries, nil
+}
+
 func (r *Repository) TopUp(ctx context.Context, params TopUpParams) (*Balance, error) {
 	if params.Description == "" {
 		params.Description = "Communication credit top-up"
@@ -225,6 +254,36 @@ func scanBalance(row pgx.Row) (*Balance, error) {
 	}
 
 	return &balance, nil
+}
+
+func scanLedgerEntry(row pgx.Row) (LedgerEntry, error) {
+	var entry LedgerEntry
+	var metadata []byte
+	if err := row.Scan(
+		&entry.ID,
+		&entry.UserID,
+		&entry.Type,
+		&entry.Amount,
+		&entry.BalanceAfter,
+		&entry.Provider,
+		&entry.Destination,
+		&entry.Reference,
+		&entry.Description,
+		&metadata,
+		&entry.CreatedAt,
+	); err != nil {
+		return LedgerEntry{}, fmt.Errorf("scan credit ledger entry: %w", err)
+	}
+	if len(metadata) > 0 {
+		if err := json.Unmarshal(metadata, &entry.Metadata); err != nil {
+			return LedgerEntry{}, fmt.Errorf("decode credit ledger metadata: %w", err)
+		}
+	}
+	if entry.Metadata == nil {
+		entry.Metadata = map[string]any{}
+	}
+
+	return entry, nil
 }
 
 func optionalString(value string) *string {

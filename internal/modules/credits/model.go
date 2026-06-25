@@ -46,6 +46,12 @@ type TopUpParams struct {
 	Metadata    map[string]any
 }
 
+type ListLedgerParams struct {
+	UserID uuid.UUID
+	Limit  int
+	Offset int
+}
+
 type DebitParams struct {
 	UserID      uuid.UUID
 	Amount      int64

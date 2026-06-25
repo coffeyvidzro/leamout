@@ -21,6 +21,17 @@ func (s *Service) GetBalance(ctx context.Context, userID uuid.UUID) (*Balance, e
 	return s.repository.GetBalance(ctx, userID)
 }
 
+func (s *Service) ListLedger(ctx context.Context, params ListLedgerParams) ([]LedgerEntry, error) {
+	if params.Limit <= 0 || params.Limit > 100 {
+		params.Limit = 100
+	}
+	if params.Offset < 0 {
+		params.Offset = 0
+	}
+
+	return s.repository.ListLedger(ctx, params)
+}
+
 func (s *Service) TopUp(ctx context.Context, params TopUpParams) (*Balance, error) {
 	if params.Amount <= 0 {
 		return nil, ErrInvalidAmount
