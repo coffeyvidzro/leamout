@@ -15,7 +15,6 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/platform/logger"
 	"github.com/cuffeyvidzro/leamout/internal/platform/queue"
 	"github.com/cuffeyvidzro/leamout/internal/sms"
-	"github.com/cuffeyvidzro/leamout/internal/sms/outbox"
 	"github.com/cuffeyvidzro/leamout/internal/sms/provider"
 	"github.com/cuffeyvidzro/leamout/internal/sms/provider/arkesel"
 	smsmock "github.com/cuffeyvidzro/leamout/internal/sms/provider/mock"
@@ -55,7 +54,7 @@ func main() {
 			routing.ProviderArkesel: arkesel.NewProvider(arkesel.NewClient(cfg.Arkesel)),
 			routing.ProviderMock:    smsmock.NewProvider(smsmock.NewClient(false)),
 		},
-		sms.Config{Outbox: outbox.NewRepository(postgresPool)},
+		sms.Config{},
 	)
 	dunning.RegisterSendReminderWorker(
 		workers,

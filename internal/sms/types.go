@@ -1,29 +1,21 @@
 package sms
 
-import (
-	"context"
-
-	"github.com/cuffeyvidzro/leamout/internal/sms/outbox"
-	"github.com/google/uuid"
-)
+import "github.com/google/uuid"
 
 type Config struct {
 	DefaultFrom string
-	Outbox      OutboxStore
-}
-
-type OutboxStore interface {
-	CreateOrGet(ctx context.Context, params outbox.CreateParams) (*outbox.Message, bool, error)
-	MarkDebited(ctx context.Context, id uuid.UUID) error
-	MarkSent(ctx context.Context, id uuid.UUID) error
-	MarkRefunded(ctx context.Context, id uuid.UUID, err error) error
 }
 
 type Message struct {
-	UserID    uuid.UUID
-	To        string
-	Content   string
-	From      string
+	UserID uuid.UUID
+
+	To      string
+	Content string
+	From    string
+
+	// Reference should be unique per business action.
+	// Example: dunning_sms:<dunning_attempt_id>
 	Reference string
-	Metadata  map[string]any
+
+	Metadata map[string]any
 }

@@ -116,7 +116,7 @@ func (w *SendReminderWorker) Work(ctx context.Context, job *river.Job[SendRemind
 		UserID:    job.Args.UserID,
 		To:        details.CustomerPhone,
 		Content:   message,
-		Reference: "dunning:" + attempt.ID.String(),
+		Reference: "dunning_sms:" + attempt.ID.String(),
 		Metadata: map[string]any{
 			"dunning_attempt_id": attempt.ID.String(),
 			"subscription_id":    job.Args.SubscriptionID.String(),
