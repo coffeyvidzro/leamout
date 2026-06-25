@@ -146,10 +146,10 @@ func (w *SendReminderWorker) Work(ctx context.Context, job *river.Job[SendRemind
 
 func (w *SendReminderWorker) recoveryLink(rawToken string) string {
 	if w.baseURL == "" {
-		return "/dunning/" + url.PathEscape(rawToken)
+		return "/r/" + url.PathEscape(rawToken)
 	}
 
-	return w.baseURL + "/dunning/" + url.PathEscape(rawToken)
+	return w.baseURL + "/r/" + url.PathEscape(rawToken)
 }
 
 func (w *SendReminderWorker) logInfo(message string, args SendReminderArgs, attemptID uuid.UUID) {

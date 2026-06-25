@@ -18,32 +18,75 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func (s *Server) Router() *gin.Engine {
+func (s *Server) BuildEngine() *gin.Engine {
 	if !s.cfg.IsDevelopment() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
 	router := gin.New()
 
+	// Global Middleware
 	router.Use(gin.Recovery())
-
 	router.Use(middleware.RequestContext())
 	router.Use(middleware.RequestLogger(s.log))
 	router.Use(middleware.Secure(s.cfg.IsDevelopment()))
 	router.Use(middleware.CORS(s.cfg.CORSOrigins, s.cfg.IsDevelopment()))
 
-	auth.RegisterRoutes(router, s.authHandler())
-	sessionAuthMiddleware := middleware.SessionAuthMiddleware(s.sessionService())
-	authMiddleware := middleware.AuthMiddleware(s.sessionService(), s.patService())
-	pat.RegisterRoutes(router, s.patHandler(), sessionAuthMiddleware)
-	session.RegisterRoutes(router, s.sessionHandler(), authMiddleware)
-	user.RegisterRoutes(router, s.userHandler(), authMiddleware)
-	customer.RegisterRoutes(router, s.customerHandler(), authMiddleware)
-	product.RegisterRoutes(router, s.productHandler(), authMiddleware)
-	subscription.RegisterRoutes(router, s.subscriptionHandler(), authMiddleware)
-	checkout.RegisterRoutes(router, s.checkoutHandler(), authMiddleware)
-	credits.RegisterRoutes(router, s.creditsHandler(), authMiddleware)
-	dunning.RegisterRoutes(router, s.dunningHandler(), authMiddleware)
+	// Initialize Repositories
+
+	userRepo := user.NewRepository(s.pgPool)
+	sessionRepo := session.NewRepository(s.pgPool, s.redis)
+	authRepo := auth.NewRepository(s.pgPool)
+	customerRepo := customer.NewRepository(s.pgPool)
+	productRepo := product.NewRepository(s.pgPool)
+	checkoutRepo := checkout.NewRepository(s.pgPool)
+	patRepo := pat.NewRepository(s.pgPool)
+	subscriptionRepo := subscription.NewRepository(s.pgPool)
+	creditsRepo := credits.NewRepository(s.pgPool)
+	dunningRepo := dunning.NewRepository(s.pgPool)
+
+	//  Initialize Services
+	userService := user.NewService(userRepo)
+	sessionService := session.NewService(sessionRepo)
+	authService := auth.NewService(authRepo, s.oauthRegistry(), sessionService)
+	customerService := customer.NewService(customerRepo)
+	productService := product.NewService(productRepo)
+	checkoutService := checkout.NewService(checkoutRepo)
+	patService := pat.NewService(patRepo)
+	subscriptionService := subscription.NewService(subscriptionRepo)
+	creditsService := credits.NewService(creditsRepo)
+	dunningService := dunning.NewService(dunningRepo, checkoutService)
+
+	// Initialize Handlers
+	userHandler := user.NewHandler(userService)
+	sessionHandler := session.NewHandler(sessionService)
+	authHandler := auth.NewHandler(authService, s.cfg.IsDevelopment())
+	customerHandler := customer.NewHandler(customerService)
+	productHandler := product.NewHandler(productService)
+	checkoutHandler := checkout.NewHandler(checkoutService)
+	patHandler := pat.NewHandler(patService)
+	subscriptionHandler := subscription.NewHandler(subscriptionService)
+	creditsHandler := credits.NewHandler(creditsService)
+	dunningHandler := dunning.NewHandler(dunningService)
+
+	//  Initialize Middleware
+	sessionAuthMiddleware := middleware.SessionAuthMiddleware(sessionService)
+	authMiddleware := middleware.AuthMiddleware(sessionService, patService)
+
+	// Register Routes
+	v1 := router.Group("/v1")
+	{
+		auth.RegisterRoutes(router, authHandler, sessionAuthMiddleware)
+		pat.RegisterRoutes(v1, patHandler, sessionAuthMiddleware)
+		session.RegisterRoutes(v1, sessionHandler, authMiddleware)
+		user.RegisterRoutes(v1, userHandler, authMiddleware)
+		customer.RegisterRoutes(v1, customerHandler, authMiddleware)
+		product.RegisterRoutes(v1, productHandler, authMiddleware)
+		subscription.RegisterRoutes(v1, subscriptionHandler, authMiddleware)
+		checkout.RegisterRoutes(v1, checkoutHandler, authMiddleware)
+		credits.RegisterRoutes(v1, creditsHandler, authMiddleware)
+		dunning.RegisterRoutes(v1, dunningHandler, authMiddleware)
+	}
 
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(nethttp.StatusOK, gin.H{

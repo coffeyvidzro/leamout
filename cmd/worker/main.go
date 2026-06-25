@@ -60,7 +60,7 @@ func main() {
 		workers,
 		dunningService,
 		smsService,
-		cfg.BaseURL,
+		cfg.ShortBaseURL,
 		log,
 	)
 

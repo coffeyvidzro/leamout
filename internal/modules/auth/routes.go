@@ -2,14 +2,19 @@ package auth
 
 import "github.com/gin-gonic/gin"
 
-func RegisterRoutes(router gin.IRouter, handler *Handler) {
+func RegisterRoutes(router gin.IRouter, handler *Handler, authMiddleware gin.HandlerFunc) {
 	auth := router.Group("/auth")
+	{
+		auth.GET("/google", handler.Google)
+		auth.GET("/google/callback", handler.GoogleCallback)
 
-	auth.GET("/google", handler.Google)
-	auth.GET("/google/callback", handler.GoogleCallback)
+		auth.GET("/github", handler.GitHub)
+		auth.GET("/github/callback", handler.GitHubCallback)
+	}
 
-	auth.GET("/github", handler.GitHub)
-	auth.GET("/github/callback", handler.GitHubCallback)
-
-	auth.POST("/logout", handler.Logout)
+	protected := router.Group("/auth")
+	protected.Use(authMiddleware)
+	{
+		protected.POST("/logout", handler.Logout)
+	}
 }

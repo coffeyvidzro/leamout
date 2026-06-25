@@ -3,7 +3,7 @@ package dunning
 import "github.com/gin-gonic/gin"
 
 func RegisterRoutes(router gin.IRouter, handler *Handler, authMiddleware gin.HandlerFunc) {
-	// Public system-generated recovery link. Example: https://leam.out/r/<token>.
+	// Public system-generated recovery link. Example: https://leam.cc/r/<token>.
 	router.GET("/dunning/:token", handler.OpenRecoveryLink)
 
 	// Protected merchant visibility. Dunning attempts are system-created by jobs.
