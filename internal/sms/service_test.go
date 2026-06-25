@@ -7,6 +7,7 @@ import (
 
 	"github.com/cuffeyvidzro/leamout/internal/modules/credits"
 	"github.com/cuffeyvidzro/leamout/internal/sms"
+	"github.com/cuffeyvidzro/leamout/internal/sms/outbox"
 	"github.com/cuffeyvidzro/leamout/internal/sms/provider"
 	"github.com/cuffeyvidzro/leamout/internal/sms/provider/mock"
 	"github.com/cuffeyvidzro/leamout/internal/sms/routing"
@@ -30,6 +31,48 @@ func (c *fakeCredits) Debit(_ context.Context, params credits.DebitParams) (*cre
 func (c *fakeCredits) Refund(_ context.Context, params credits.RefundParams) (*credits.Balance, error) {
 	c.refunds = append(c.refunds, params)
 	return &credits.Balance{UserID: params.UserID, Balance: 1000 + params.Amount, Currency: credits.CurrencyGHS}, nil
+}
+
+type fakeOutbox struct {
+	message  *outbox.Message
+	created  []outbox.CreateParams
+	debited  int
+	sent     int
+	refunded int
+}
+
+func (o *fakeOutbox) CreateOrGet(_ context.Context, params outbox.CreateParams) (*outbox.Message, bool, error) {
+	o.created = append(o.created, params)
+	if o.message == nil {
+		o.message = &outbox.Message{ID: uuid.New(), Status: outbox.StatusPending}
+		return o.message, true, nil
+	}
+
+	return o.message, false, nil
+}
+
+func (o *fakeOutbox) MarkDebited(_ context.Context, _ uuid.UUID) error {
+	o.debited++
+	if o.message != nil {
+		o.message.Status = outbox.StatusDebited
+	}
+	return nil
+}
+
+func (o *fakeOutbox) MarkSent(_ context.Context, _ uuid.UUID) error {
+	o.sent++
+	if o.message != nil {
+		o.message.Status = outbox.StatusSent
+	}
+	return nil
+}
+
+func (o *fakeOutbox) MarkRefunded(_ context.Context, _ uuid.UUID, _ error) error {
+	o.refunded++
+	if o.message != nil {
+		o.message.Status = outbox.StatusRefunded
+	}
+	return nil
 }
 
 func TestServiceRoutesDebitsAppliesHardcodedSenderAndTrimsMessage(t *testing.T) {
@@ -128,5 +171,63 @@ func TestServiceDoesNotSendWhenCreditsAreInsufficient(t *testing.T) {
 	}
 	if len(client.Messages()) != 0 {
 		t.Fatal("expected no provider send when credit debit fails")
+	}
+}
+
+func TestServiceUsesOutboxForIdempotentSentMessages(t *testing.T) {
+	userID := uuid.New()
+	creditSvc := &fakeCredits{}
+	outboxStore := &fakeOutbox{}
+	client := mock.NewClient(false)
+	service := sms.NewService(
+		creditSvc,
+		routing.NewService(),
+		map[string]provider.Provider{routing.ProviderMock: mock.NewProvider(client)},
+		sms.Config{Outbox: outboxStore},
+	)
+
+	msg := sms.Message{UserID: userID, To: "+2348012345678", Content: "hello", Reference: "dunning:attempt-1"}
+	if err := service.Send(context.Background(), msg); err != nil {
+		t.Fatalf("first send: %v", err)
+	}
+	if err := service.Send(context.Background(), msg); err != nil {
+		t.Fatalf("second send: %v", err)
+	}
+
+	if len(creditSvc.debits) != 1 {
+		t.Fatalf("expected one debit, got %d", len(creditSvc.debits))
+	}
+	if len(client.Messages()) != 1 {
+		t.Fatalf("expected one provider send, got %d", len(client.Messages()))
+	}
+	if outboxStore.debited != 1 || outboxStore.sent != 1 {
+		t.Fatalf("unexpected outbox transitions: debited=%d sent=%d", outboxStore.debited, outboxStore.sent)
+	}
+	if len(outboxStore.created) != 2 || outboxStore.created[0].Reference != msg.Reference {
+		t.Fatalf("expected outbox reference lookup, got %+v", outboxStore.created)
+	}
+}
+
+func TestServiceMarksOutboxRefundedOnProviderFailure(t *testing.T) {
+	userID := uuid.New()
+	creditSvc := &fakeCredits{}
+	outboxStore := &fakeOutbox{}
+	service := sms.NewService(
+		creditSvc,
+		routing.NewService(),
+		map[string]provider.Provider{routing.ProviderMock: mock.NewProvider(mock.NewClient(true))},
+		sms.Config{Outbox: outboxStore},
+	)
+
+	err := service.Send(context.Background(), sms.Message{UserID: userID, To: "+2348012345678", Content: "hello", Reference: "dunning:attempt-2"})
+	if err == nil {
+		t.Fatal("expected provider error")
+	}
+
+	if len(creditSvc.debits) != 1 || len(creditSvc.refunds) != 1 {
+		t.Fatalf("expected one debit and one refund, got debits=%d refunds=%d", len(creditSvc.debits), len(creditSvc.refunds))
+	}
+	if outboxStore.debited != 1 || outboxStore.refunded != 1 {
+		t.Fatalf("unexpected outbox transitions: debited=%d refunded=%d", outboxStore.debited, outboxStore.refunded)
 	}
 }

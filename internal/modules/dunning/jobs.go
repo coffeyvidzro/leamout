@@ -2,12 +2,14 @@ package dunning
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
 	"strings"
 	"time"
 
+	"github.com/cuffeyvidzro/leamout/internal/modules/credits"
 	"github.com/cuffeyvidzro/leamout/internal/sms"
 	"github.com/google/uuid"
 	"github.com/riverqueue/river"
@@ -120,6 +122,9 @@ func (w *SendReminderWorker) Work(ctx context.Context, job *river.Job[SendRemind
 			"subscription_id":    job.Args.SubscriptionID.String(),
 		},
 	}); err != nil {
+		if errors.Is(err, credits.ErrInsufficientBalance) {
+			return river.JobCancel(fmt.Errorf("cancel dunning reminder due to insufficient communication credits: %w", err))
+		}
 		return fmt.Errorf("send dunning sms: %w", err)
 	}
 

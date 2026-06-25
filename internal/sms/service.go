@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/cuffeyvidzro/leamout/internal/modules/credits"
+	"github.com/cuffeyvidzro/leamout/internal/sms/outbox"
 	"github.com/cuffeyvidzro/leamout/internal/sms/provider"
 	"github.com/cuffeyvidzro/leamout/internal/sms/routing"
 	"github.com/google/uuid"
@@ -35,14 +36,15 @@ type Router interface {
 
 type Service struct {
 	credits   CreditLedger
+	outbox    OutboxStore
 	router    Router
 	providers map[string]provider.Provider
 }
 
 func NewService(credits CreditLedger, router Router, providers map[string]provider.Provider, cfg Config) *Service {
-	_ = cfg
 	return &Service{
 		credits:   credits,
+		outbox:    cfg.Outbox,
 		router:    router,
 		providers: providers,
 	}
@@ -81,16 +83,36 @@ func (s *Service) Send(ctx context.Context, msg Message) error {
 	metadata["country_code"] = route.CountryCode
 	metadata["provider"] = route.Provider
 
-	if _, err := s.credits.Debit(ctx, credits.DebitParams{
-		UserID:      normalized.UserID,
-		Amount:      route.CostPesewas,
-		Provider:    route.Provider,
-		Destination: route.Destination,
-		Reference:   reference,
-		Description: "Dunning SMS",
-		Metadata:    metadata,
-	}); err != nil {
+	outboxMessage, err := s.createOrGetOutboxMessage(ctx, normalized, route, reference, metadata)
+	if err != nil {
 		return err
+	}
+	if outboxMessage != nil {
+		if outboxMessage.Status == outbox.StatusSent {
+			return nil
+		}
+		if outboxMessage.Status == outbox.StatusRefunded || outboxMessage.Status == outbox.StatusFailed {
+			return fmt.Errorf("sms outbox message is %s: %s", outboxMessage.Status, reference)
+		}
+	}
+
+	if outboxMessage == nil || outboxMessage.Status == outbox.StatusPending {
+		if _, err := s.credits.Debit(ctx, credits.DebitParams{
+			UserID:      normalized.UserID,
+			Amount:      route.CostPesewas,
+			Provider:    route.Provider,
+			Destination: route.Destination,
+			Reference:   reference,
+			Description: "Dunning SMS",
+			Metadata:    metadata,
+		}); err != nil {
+			return err
+		}
+		if outboxMessage != nil {
+			if err := s.outbox.MarkDebited(ctx, outboxMessage.ID); err != nil {
+				return err
+			}
+		}
 	}
 
 	if err := sender.Send(ctx, provider.Message{
@@ -107,10 +129,42 @@ func (s *Service) Send(ctx context.Context, msg Message) error {
 			Description: "Dunning SMS send failure refund",
 			Metadata:    metadata,
 		})
+		if outboxMessage != nil {
+			_ = s.outbox.MarkRefunded(ctx, outboxMessage.ID, err)
+		}
 		return fmt.Errorf("send sms via %s: %w", sender.Name(), err)
 	}
 
+	if outboxMessage != nil {
+		if err := s.outbox.MarkSent(ctx, outboxMessage.ID); err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+func (s *Service) createOrGetOutboxMessage(ctx context.Context, msg Message, route routing.Route, reference string, metadata map[string]any) (*outbox.Message, error) {
+	if s.outbox == nil {
+		return nil, nil
+	}
+
+	message, _, err := s.outbox.CreateOrGet(ctx, outbox.CreateParams{
+		UserID:      msg.UserID,
+		Reference:   reference,
+		Destination: route.Destination,
+		Sender:      msg.From,
+		Content:     msg.Content,
+		CountryCode: route.CountryCode,
+		Provider:    route.Provider,
+		Cost:        route.CostPesewas,
+		Metadata:    metadata,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return message, nil
 }
 
 func (s *Service) normalize(msg Message) (Message, error) {

@@ -127,6 +127,12 @@ func (r *Repository) Debit(ctx context.Context, params DebitParams) (*Balance, e
 		_ = tx.Rollback(ctx)
 	}()
 
+	if balance, found, err := getExistingLedgerBalance(ctx, tx, params.UserID, params.Reference, LedgerTypeDebit); err != nil {
+		return nil, err
+	} else if found {
+		return balance, nil
+	}
+
 	const debit = `
 UPDATE credits
 SET balance = balance - $2
@@ -175,6 +181,12 @@ func (r *Repository) Refund(ctx context.Context, params RefundParams) (*Balance,
 		_ = tx.Rollback(ctx)
 	}()
 
+	if balance, found, err := getExistingLedgerBalance(ctx, tx, params.UserID, params.Reference, LedgerTypeRefund); err != nil {
+		return nil, err
+	} else if found {
+		return balance, nil
+	}
+
 	const refund = `
 INSERT INTO credits (user_id, balance, currency)
 VALUES ($1, $2, 'GHS')
@@ -208,6 +220,32 @@ RETURNING user_id, balance, currency, created_at, updated_at`
 
 type txIface interface {
 	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+	QueryRow(context.Context, string, ...any) pgx.Row
+}
+
+func getExistingLedgerBalance(ctx context.Context, tx txIface, userID uuid.UUID, reference string, ledgerType LedgerType) (*Balance, bool, error) {
+	reference = strings.TrimSpace(reference)
+	if reference == "" {
+		return nil, false, nil
+	}
+
+	const query = `
+SELECT c.user_id, c.balance, c.currency, c.created_at, c.updated_at
+FROM credit_ledger l
+JOIN credits c ON c.user_id = l.user_id
+WHERE l.user_id = $1
+  AND l.reference = $2
+  AND l.type = $3`
+
+	balance, err := scanBalance(tx.QueryRow(ctx, query, userID, reference, ledgerType))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("get existing credit ledger balance: %w", err)
+	}
+
+	return balance, true, nil
 }
 
 func insertLedger(ctx context.Context, tx txIface, entry LedgerEntry) error {
