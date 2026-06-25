@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -23,6 +24,71 @@ type Repository struct {
 
 func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
+}
+
+func (r *Repository) ListSubscriptionsDueForRenewal(ctx context.Context, start, end time.Time) ([]ExpiringSubscription, error) {
+	const query = `
+SELECT s.user_id, s.id, s.customer_id, s.current_period_end
+FROM subscriptions s
+WHERE s.status = 'active'
+  AND s.cancel_at_period_end = FALSE
+  AND s.customer_id IS NOT NULL
+  AND s.current_period_end >= $1
+  AND s.current_period_end <= $2
+  AND NOT EXISTS (
+	SELECT 1
+	FROM dunning_attempts a
+	WHERE a.user_id = s.user_id
+	  AND a.subscription_id = s.id
+	  AND a.reason = 'renewal_due'
+	  AND a.period_end = s.current_period_end
+	  AND a.status IN ('pending', 'sent')
+  )
+ORDER BY s.current_period_end ASC`
+
+	rows, err := r.db.Query(ctx, query, start, end)
+	if err != nil {
+		return nil, fmt.Errorf("list subscriptions due for renewal: %w", err)
+	}
+	defer rows.Close()
+
+	subscriptions := make([]ExpiringSubscription, 0)
+	for rows.Next() {
+		var subscription ExpiringSubscription
+		if err := rows.Scan(
+			&subscription.UserID,
+			&subscription.SubscriptionID,
+			&subscription.CustomerID,
+			&subscription.CurrentPeriodEnd,
+		); err != nil {
+			return nil, fmt.Errorf("scan subscription due for renewal: %w", err)
+		}
+		subscriptions = append(subscriptions, subscription)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate subscriptions due for renewal: %w", err)
+	}
+
+	return subscriptions, nil
+}
+
+func (r *Repository) GetNotificationDetails(ctx context.Context, userID, attemptID uuid.UUID) (*NotificationDetails, error) {
+	const query = `
+SELECT c.phone
+FROM dunning_attempts a
+JOIN customers c ON c.user_id = a.user_id AND c.id = a.customer_id
+WHERE a.user_id = $1 AND a.id = $2`
+
+	var details NotificationDetails
+	err := r.db.QueryRow(ctx, query, userID, attemptID).Scan(&details.Phone)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get dunning notification details: %w", err)
+	}
+
+	return &details, nil
 }
 
 func (r *Repository) CreateOrReuseAttempt(ctx context.Context, params CreateAttemptParams) (*Attempt, error) {

@@ -6,8 +6,10 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/cuffeyvidzro/leamout/internal/config"
+	"github.com/cuffeyvidzro/leamout/internal/modules/dunning"
 	platformcron "github.com/cuffeyvidzro/leamout/internal/platform/cron"
 	"github.com/cuffeyvidzro/leamout/internal/platform/database"
 	"github.com/cuffeyvidzro/leamout/internal/platform/logger"
@@ -64,10 +66,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Temporary test job.
-	// Later this will call billing renewal scanner.
-	_, err = scheduler.AddJob(platformcron.ScheduleMin, func() {
-		log.Info("cron heartbeat - scanner active", "river_client_initialized", riverClient != nil)
+	dunningRepository := dunning.NewRepository(postgresPool)
+	scanner := dunning.NewScanner(dunningRepository, riverClient.River, log)
+
+	_, err = scheduler.AddJob(platformcron.ScheduleHourly, func() {
+		if inserted, err := scanner.RunOnce(context.Background(), time.Now().UTC()); err != nil {
+			log.Error("renewal scanner failed", slog.Any("error", err))
+		} else {
+			log.Info("renewal scanner enqueued jobs", slog.Int("jobs_inserted", inserted))
+		}
 	})
 	if err != nil {
 		log.Error("failed to register cron job", slog.Any("error", err))

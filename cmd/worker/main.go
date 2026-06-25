@@ -9,9 +9,11 @@ import (
 	"time"
 
 	"github.com/cuffeyvidzro/leamout/internal/config"
+	"github.com/cuffeyvidzro/leamout/internal/modules/dunning"
 	"github.com/cuffeyvidzro/leamout/internal/platform/database"
 	"github.com/cuffeyvidzro/leamout/internal/platform/logger"
 	"github.com/cuffeyvidzro/leamout/internal/platform/queue"
+	"github.com/riverqueue/river"
 )
 
 func main() {
@@ -37,7 +39,10 @@ func main() {
 	}
 	defer postgresPool.Close()
 
-	workers := queue.NewWorkerRegistry()
+	dunningRepository := dunning.NewRepository(postgresPool)
+	dunningService := dunning.NewService(dunningRepository, nil)
+	workers := river.NewWorkers()
+	river.AddWorker(workers, dunning.NewSendRenewalSMSWorker(dunningService, dunningRepository, cfg.ShortBaseURL, log))
 
 	queueClient, err := queue.NewClient(postgresPool, workers, queue.Config{
 		Enabled:    cfg.Queue.Enabled,
