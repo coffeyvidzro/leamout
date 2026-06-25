@@ -136,6 +136,52 @@ func (r *Repository) Delete(ctx context.Context, userID, id uuid.UUID) error {
 	return nil
 }
 
+func (r *Repository) ListDueForDunning(ctx context.Context, windowEnd time.Time) ([]DunningCandidate, error) {
+	const query = `
+SELECT s.id, s.user_id, s.customer_id, s.current_period_end
+FROM subscriptions s
+WHERE s.status = 'active'
+  AND s.cancel_at_period_end = FALSE
+  AND s.customer_id IS NOT NULL
+  AND s.current_period_end > NOW()
+  AND s.current_period_end <= $1
+  AND NOT EXISTS (
+	SELECT 1
+	FROM dunning_attempts da
+	WHERE da.user_id = s.user_id
+	  AND da.subscription_id = s.id
+	  AND da.reason = 'renewal_due'
+	  AND da.period_end = s.current_period_end
+	  AND da.status IN ('pending', 'sent')
+  )
+ORDER BY s.current_period_end ASC`
+
+	rows, err := r.db.Query(ctx, query, windowEnd)
+	if err != nil {
+		return nil, fmt.Errorf("list subscriptions due for dunning: %w", err)
+	}
+	defer rows.Close()
+
+	candidates := make([]DunningCandidate, 0)
+	for rows.Next() {
+		var candidate DunningCandidate
+		if err := rows.Scan(
+			&candidate.ID,
+			&candidate.UserID,
+			&candidate.CustomerID,
+			&candidate.CurrentPeriodEnd,
+		); err != nil {
+			return nil, fmt.Errorf("scan dunning candidate: %w", err)
+		}
+		candidates = append(candidates, candidate)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate dunning candidates: %w", err)
+	}
+
+	return candidates, nil
+}
+
 func (r *Repository) get(ctx context.Context, query string, args ...any) (*Subscription, error) {
 	subscription, err := scanSubscription(r.db.QueryRow(ctx, query, args...))
 	if errors.Is(err, pgx.ErrNoRows) {

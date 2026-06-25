@@ -78,6 +78,10 @@ func (s *Service) GetByToken(ctx context.Context, rawToken string) (*TokenWithAt
 	return s.repository.GetByTokenHash(ctx, HashToken(rawToken))
 }
 
+func (s *Service) GetReminderDetails(ctx context.Context, userID, subscriptionID uuid.UUID) (*ReminderDetails, error) {
+	return s.repository.GetReminderDetails(ctx, userID, subscriptionID)
+}
+
 func (s *Service) OpenRecoveryLink(ctx context.Context, rawToken string) (*checkout.Session, error) {
 	if s.checkoutService == nil {
 		return nil, errors.New("checkout service is not configured")
@@ -137,6 +141,10 @@ func (s *Service) RecordTokenUse(ctx context.Context, rawToken string) (*TokenWi
 
 func (s *Service) RevokeToken(ctx context.Context, rawToken string) error {
 	return s.repository.RevokeToken(ctx, HashToken(rawToken))
+}
+
+func (s *Service) RevokeAttemptTokens(ctx context.Context, userID, attemptID uuid.UUID) error {
+	return s.repository.RevokeAttemptTokens(ctx, userID, attemptID)
 }
 
 func (s *Service) MarkAttemptSent(ctx context.Context, attemptID uuid.UUID) error {

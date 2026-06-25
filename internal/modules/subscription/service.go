@@ -2,6 +2,7 @@ package subscription
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -32,4 +33,8 @@ func (s *Service) Update(ctx context.Context, userID, id uuid.UUID, req UpdateRe
 
 func (s *Service) Delete(ctx context.Context, userID, id uuid.UUID) error {
 	return s.repo.Delete(ctx, userID, id)
+}
+
+func (s *Service) ListDueForDunning(ctx context.Context, windowEnd time.Time) ([]DunningCandidate, error) {
+	return s.repo.ListDueForDunning(ctx, windowEnd)
 }

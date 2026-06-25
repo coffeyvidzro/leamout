@@ -15,11 +15,13 @@ func FromInternal(msg provider.Message) *SendRequest {
 
 // ToInternal maps the Arkesel-specific API response to the unified provider.Result
 func ToInternal(resp *SendResponse) provider.Result {
-	// Taking the first ID as the primary message reference
-
+	messageID := ""
+	if len(resp.Data) > 0 {
+		messageID = resp.Data[0].ID
+	}
 	return provider.Result{
 		Provider:  "arkesel",
-		MessageID: resp.Data[0].ID,
+		MessageID: messageID,
 		Status:    resp.Status,
 	}
 }

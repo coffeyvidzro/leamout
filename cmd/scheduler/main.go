@@ -8,6 +8,8 @@ import (
 	"syscall"
 
 	"github.com/cuffeyvidzro/leamout/internal/config"
+	"github.com/cuffeyvidzro/leamout/internal/modules/dunning"
+	"github.com/cuffeyvidzro/leamout/internal/modules/subscription"
 	platformcron "github.com/cuffeyvidzro/leamout/internal/platform/cron"
 	"github.com/cuffeyvidzro/leamout/internal/platform/database"
 	"github.com/cuffeyvidzro/leamout/internal/platform/logger"
@@ -37,7 +39,10 @@ func main() {
 	}
 	defer postgresPool.Close()
 
-	riverClient, err := queue.NewClient(postgresPool, nil, queue.Config{Enabled: false})
+	workers := queue.NewWorkerRegistry()
+	dunning.RegisterReminderJobKind(workers)
+
+	riverClient, err := queue.NewClient(postgresPool, workers, queue.Config{Enabled: false})
 	if err != nil {
 		log.Error("failed to create river client", slog.Any("error", err))
 		os.Exit(1)
@@ -64,10 +69,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Temporary test job.
-	// Later this will call billing renewal scanner.
-	_, err = scheduler.AddJob(platformcron.ScheduleMin, func() {
-		log.Info("cron heartbeat - scanner active", "river_client_initialized", riverClient != nil)
+	subscriptionService := subscription.NewService(subscription.NewRepository(postgresPool))
+	scanner := dunning.NewScanner(subscriptionService, func(ctx context.Context, args dunning.SendReminderArgs) error {
+		return riverClient.Insert(ctx, args, nil)
+	}, log)
+
+	_, err = scheduler.AddJob(platformcron.ScheduleHourly, func() {
+		if _, err := scanner.RunOnce(context.Background()); err != nil {
+			log.Error("dunning scanner failed", slog.Any("error", err))
+		}
 	})
 	if err != nil {
 		log.Error("failed to register cron job", slog.Any("error", err))

@@ -36,6 +36,13 @@ type Subscription struct {
 	UpdatedAt                   time.Time      `json:"updated_at"`
 }
 
+type DunningCandidate struct {
+	ID               uuid.UUID  `json:"id"`
+	UserID           uuid.UUID  `json:"user_id"`
+	CustomerID       *uuid.UUID `json:"customer_id,omitempty"`
+	CurrentPeriodEnd time.Time  `json:"current_period_end"`
+}
+
 type CreateRequest struct {
 	CustomerID         *uuid.UUID     `json:"customer_id"`
 	PriceID            uuid.UUID      `json:"price_id" binding:"required"`

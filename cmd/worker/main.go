@@ -9,9 +9,17 @@ import (
 	"time"
 
 	"github.com/cuffeyvidzro/leamout/internal/config"
+	"github.com/cuffeyvidzro/leamout/internal/modules/credits"
+	"github.com/cuffeyvidzro/leamout/internal/modules/dunning"
 	"github.com/cuffeyvidzro/leamout/internal/platform/database"
 	"github.com/cuffeyvidzro/leamout/internal/platform/logger"
 	"github.com/cuffeyvidzro/leamout/internal/platform/queue"
+	"github.com/cuffeyvidzro/leamout/internal/sms"
+	"github.com/cuffeyvidzro/leamout/internal/sms/outbox"
+	"github.com/cuffeyvidzro/leamout/internal/sms/provider"
+	"github.com/cuffeyvidzro/leamout/internal/sms/provider/arkesel"
+	smsmock "github.com/cuffeyvidzro/leamout/internal/sms/provider/mock"
+	"github.com/cuffeyvidzro/leamout/internal/sms/routing"
 )
 
 func main() {
@@ -38,6 +46,24 @@ func main() {
 	defer postgresPool.Close()
 
 	workers := queue.NewWorkerRegistry()
+	dunningService := dunning.NewService(dunning.NewRepository(postgresPool), nil)
+	creditService := credits.NewService(credits.NewRepository(postgresPool))
+	smsService := sms.NewService(
+		creditService,
+		routing.NewService(),
+		map[string]provider.Provider{
+			routing.ProviderArkesel: arkesel.NewProvider(arkesel.NewClient(cfg.Arkesel)),
+			routing.ProviderMock:    smsmock.NewProvider(smsmock.NewClient(false)),
+		},
+		sms.Config{Outbox: outbox.NewRepository(postgresPool)},
+	)
+	dunning.RegisterSendReminderWorker(
+		workers,
+		dunningService,
+		smsService,
+		cfg.BaseURL,
+		log,
+	)
 
 	queueClient, err := queue.NewClient(postgresPool, workers, queue.Config{
 		Enabled:    cfg.Queue.Enabled,
