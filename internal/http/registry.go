@@ -10,6 +10,7 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/modules/credits"
 	"github.com/cuffeyvidzro/leamout/internal/modules/customer"
 	"github.com/cuffeyvidzro/leamout/internal/modules/dunning"
+	"github.com/cuffeyvidzro/leamout/internal/modules/pat"
 	"github.com/cuffeyvidzro/leamout/internal/modules/product"
 	"github.com/cuffeyvidzro/leamout/internal/modules/session"
 	"github.com/cuffeyvidzro/leamout/internal/modules/subscription"
@@ -47,6 +48,15 @@ func (s *Server) authHandler() *auth.Handler {
 
 func (s *Server) sessionHandler() *session.Handler {
 	return session.NewHandler(s.sessionService())
+}
+
+func (s *Server) patService() *pat.Service {
+	repository := pat.NewRepository(s.postgres)
+	return pat.NewService(repository)
+}
+
+func (s *Server) patHandler() *pat.Handler {
+	return pat.NewHandler(s.patService())
 }
 
 func (s *Server) sessionService() *session.Service {

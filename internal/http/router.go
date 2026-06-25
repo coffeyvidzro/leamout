@@ -10,6 +10,7 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/modules/credits"
 	"github.com/cuffeyvidzro/leamout/internal/modules/customer"
 	"github.com/cuffeyvidzro/leamout/internal/modules/dunning"
+	"github.com/cuffeyvidzro/leamout/internal/modules/pat"
 	"github.com/cuffeyvidzro/leamout/internal/modules/product"
 	"github.com/cuffeyvidzro/leamout/internal/modules/session"
 	"github.com/cuffeyvidzro/leamout/internal/modules/subscription"
@@ -32,7 +33,9 @@ func (s *Server) Router() *gin.Engine {
 	router.Use(middleware.CORS(s.cfg.CORSOrigins, s.cfg.IsDevelopment()))
 
 	auth.RegisterRoutes(router, s.authHandler())
-	authMiddleware := middleware.AuthMiddleware(s.sessionService())
+	sessionAuthMiddleware := middleware.SessionAuthMiddleware(s.sessionService())
+	authMiddleware := middleware.AuthMiddleware(s.sessionService(), s.patService())
+	pat.RegisterRoutes(router, s.patHandler(), sessionAuthMiddleware)
 	session.RegisterRoutes(router, s.sessionHandler(), authMiddleware)
 	user.RegisterRoutes(router, s.userHandler(), authMiddleware)
 	customer.RegisterRoutes(router, s.customerHandler(), authMiddleware)
