@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/cuffeyvidzro/leamout/internal/payment"
-	"github.com/cuffeyvidzro/leamout/internal/payment/provider"
 )
 
 type PaymentHooks struct {
@@ -55,4 +54,3 @@ func contextFromPayment(ctx payment.Context) context.Context {
 }
 
 var _ payment.Hooks = (*PaymentHooks)(nil)
-var _ = provider.PaymentStatusSucceeded
