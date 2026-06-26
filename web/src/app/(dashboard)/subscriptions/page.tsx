@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { Button } from "@/components/ui/button";
@@ -80,7 +81,9 @@ export default function SubscriptionsPage() {
           description="Track active, past due, and canceled customer subscriptions."
         />
 
-        <Button disabled>Add subscription</Button>
+        <Button asChild>
+          <Link href="/subscriptions/new">Add subscription</Link>
+        </Button>
       </div>
 
       <Card>
