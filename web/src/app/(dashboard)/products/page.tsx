@@ -105,7 +105,11 @@ export default function ProductsPage() {
                 {products.map((product) => (
                   <TableRow key={product.id}>
                     <TableCell>
-                      <div className="font-medium">{product.name}</div>
+                      <Button asChild className="h-auto p-0" variant="link">
+                        <Link href={`/products/${product.id}`}>
+                          {product.name}
+                        </Link>
+                      </Button>
                       {product.description ? (
                         <div className="text-xs text-muted-foreground">
                           {product.description}
