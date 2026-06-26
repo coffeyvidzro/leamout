@@ -1,303 +1,507 @@
 # Leamout Backend
 
-Leamout is a prototype billing and monetization backend for Africa-focused products built around MoMo-style renewal flows.
+Leamout is a prototype billing and monetization backend for African digital creators.
 
-The immediate goal is not to build a full billing platform. The clean MVP is to prove one renewal lifecycle end to end:
+The backend prototype currently proves the core renewal lifecycle end to end:
 
-> Create one test subscription expiring in 3 days, run the scanner, see mock SMS output, open the renewal link, click mock pay, and confirm the subscription expiry date extends.
+> A creator creates a product, customer, subscription, and communication credit balance. The scheduler finds a subscription nearing expiry, the worker sends a paid SMS renewal reminder, the customer opens a secure recovery link, checkout is confirmed, the subscription renews, credits are debited, and the dunning attempt is marked paid.
+
+## Current status
+
+| Area | Status |
+| --- | --- |
+| Backend prototype | Achieved |
+| Backend MVP core | Achieved |
+| Next.js checkout UI | Next |
+| Real payment provider | Not integrated yet |
+| Production short-domain routing | Not deployed yet |
 
 ## Prototype thesis
 
-Many small businesses need subscription billing without card rails. The prototype models a MoMo-friendly renewal flow:
+Many African digital creators need subscription billing and renewal automation without assuming card-first rails.
 
-1. A subscription is close to expiry.
-2. The system creates a short-lived renewal token.
-3. The customer receives a payment link over SMS.
-4. The customer opens the link and sees a simple checkout page.
-5. A mock payment succeeds.
-6. The subscription is extended.
+Leamout's MVP direction is:
 
-For now, every external integration should be mocked or local-first. The important thing is proving the lifecycle, boundaries, jobs, and data model.
+1. A creator defines products and prices.
+2. A customer has an active subscription.
+3. A scanner finds subscriptions nearing expiry.
+4. A River worker sends a renewal SMS.
+5. SMS cost is deducted from the creator's prepaid communication credits.
+6. The customer opens a short recovery link.
+7. The backend creates a checkout session.
+8. Checkout confirmation renews the subscription.
+9. The dunning attempt is marked paid and the token cannot be reused.
 
 ## Tech stack
 
-| Concern | Technology | Prototype use |
+| Concern | Technology | Use |
 | --- | --- | --- |
 | Language | Go | Backend services, workers, scheduler, HTTP handlers |
-| API router | Gin | JSON APIs and renewal checkout routes |
-| Database | PostgreSQL | Users, customers, subscriptions, renewal tokens, sessions, payment records |
-| Cache | Redis | Session/token cache and short-lived runtime state where useful |
-| Queue | River | Durable background jobs for renewal notifications and payment-side effects |
-| Scheduler | robfig/cron | Hourly scanner that finds subscriptions expiring soon |
-| SMS | Mock SMS | Print renewal message/link to logs/stdout |
-| Payments | Mock MoMo payment | Local success path to extend subscriptions |
-| Container | Docker | Reproducible server build/runtime image |
+| API router | Gin | JSON APIs and public recovery/checkout endpoints |
+| Database | PostgreSQL | Users, sessions, products, prices, customers, subscriptions, dunning, checkout, credits, PATs |
+| Queue | River | Durable background jobs for dunning reminders |
+| Scheduler | robfig/cron | Subscription scanner |
+| SMS | Internal SMS orchestration | Mock provider locally, Arkesel route for Ghana numbers |
+| Auth | OAuth sessions + PATs | Browser login and API testing/integration auth |
+| Geo/IP/security | MaxMind/IPinfo + Arcjet | Request context and protection middleware |
+| Container | Docker Compose | Local PostgreSQL and Redis dependencies |
 
-## Target MVP flow
-
-```text
-robfig/cron
-  ↓
-scanner runs every hour
-  ↓
-find subscriptions expiring in 3 days
-  ↓
-insert River job
-  ↓
-River worker creates renewal token
-  ↓
-Mock SMS prints message/link
-  ↓
-customer opens /r/:token
-  ↓
-Gin validates token
-  ↓
-show simple checkout page
-  ↓
-mock payment success
-  ↓
-extend subscription
-```
-
-## Clean MVP acceptance test
-
-The prototype is successful when we can do this locally:
-
-1. Start PostgreSQL, Redis, the API server, scheduler, and worker.
-2. Seed one customer and one active subscription expiring exactly 3 days from now.
-3. Run the scanner manually or wait for the hourly cron tick.
-4. Confirm a River job is inserted for the subscription renewal.
-5. Confirm the worker creates a renewal token.
-6. Confirm the mock SMS prints a message containing a link like:
-
-   ```text
-   http://localhost:8080/r/<token>
-   ```
-
-7. Open the link in a browser.
-8. See a minimal checkout page with subscription/customer details.
-9. Click **Mock Pay**.
-10. Confirm the subscription expiry date is extended by the configured billing period.
-
-## Local dunning demo
-
-The demo harness seeds a complete local renewal scenario, runs the scanner, lets
-the worker emit a mock SMS link, completes checkout with the raw token from that
-link, and prints the resulting lifecycle state.
-
-Start PostgreSQL and Redis first:
-
-```bash
-docker compose -f compose.yml up -d postgres redis
-```
-
-Then run the full scripted flow:
-
-```bash
-make demo-dunning-flow
-```
-
-You can also run each step manually:
-
-```bash
-make demo-migrate
-make demo-seed
-make demo-scan
-timeout 10s go run ./cmd/worker
-make demo-complete TOKEN=<token-from-worker-output>
-make demo-verify
-```
-
-## Suggested prototype modules
-
-### Existing/foundation modules
-
-- `internal/modules/auth`: OAuth login and logout.
-- `internal/modules/session`: Cookie-backed sessions.
-- `internal/modules/user`: Current user profile endpoints.
-- `internal/modules/customer`: User-scoped customer records.
-- `internal/platform/queue`: River client and worker registry.
-- `internal/platform/cron`: robfig/cron scheduler wrapper.
-
-### Next MVP modules
-
-#### `internal/modules/subscription`
-
-Owns subscription records and renewal state.
-
-Likely responsibilities:
-
-- Create test subscriptions.
-- List subscriptions expiring within a time window.
-- Extend a subscription after successful mock payment.
-- Prevent double-extension from the same renewal token/payment attempt.
-
-Minimum fields:
-
-- `id`
-- `user_id`
-- `customer_id`
-- `plan_name`
-- `amount`
-- `currency`
-- `interval_days`
-- `status`
-- `current_period_end`
-- `created_at`
-- `updated_at`
-
-#### `internal/modules/renewal`
-
-Owns renewal tokens and checkout links.
-
-Likely responsibilities:
-
-- Create a token for a subscription renewal.
-- Validate `/r/:token` requests.
-- Expire or mark tokens as used.
-- Link token usage to payment/subscription extension.
-
-Minimum fields:
-
-- `id`
-- `subscription_id`
-- `token_hash`
-- `expires_at`
-- `used_at`
-- `created_at`
-
-#### `internal/modules/payment`
-
-Owns the mock payment flow.
-
-Likely responsibilities:
-
-- Render/serve mock checkout actions.
-- Record a mock payment success.
-- Trigger subscription extension.
-
-Minimum fields:
-
-- `id`
-- `subscription_id`
-- `renewal_token_id`
-- `amount`
-- `currency`
-- `provider`
-- `status`
-- `created_at`
-
-#### `internal/modules/notification`
-
-Owns mock SMS sending.
-
-Likely responsibilities:
-
-- Format renewal messages.
-- Print SMS output to logs/stdout.
-- Eventually swap mock sender for an SMS provider.
-
-Example mock SMS:
+## Implemented flow
 
 ```text
-[MOCK SMS] To +233501234567: Your Leamout subscription expires soon. Renew here: http://localhost:8080/r/abc123
+Creator auth / PAT
+  ↓
+Create product + recurring price
+  ↓
+Create customer
+  ↓
+Create active subscription
+  ↓
+Top up communication credits
+  ↓
+robfig/cron scanner finds subscription due within window
+  ↓
+River job is enqueued
+  ↓
+Worker creates/reuses dunning attempt and token
+  ↓
+SMS service routes message and debits credits
+  ↓
+Mock SMS prints: http://localhost:3000/r/<token>
+  ↓
+Short link maps to backend dunning route
+  ↓
+GET /v1/dunning/:token creates checkout session
+  ↓
+Backend redirects to frontend checkout URL
+  ↓
+POST /v1/checkout/:clientSecret/confirm
+  ↓
+Subscription period extends
+  ↓
+Dunning attempt becomes paid
+  ↓
+Dunning token is revoked and cannot be reused
 ```
 
-## Scheduler and worker design
+## Domain model
 
-### Scanner
+Leamout separates these concepts:
 
-The scanner should run hourly through `robfig/cron`, but it should also be callable manually for the MVP.
+- **Products**: creator-owned things being sold.
+- **Prices**: one-time, recurring, or usage price definitions. MVP renewal uses recurring prices.
+- **Customers**: user-scoped customer records with phone numbers.
+- **Subscriptions**: active customer subscriptions tied to a recurring price.
+- **Dunning attempts**: system-managed renewal reminder attempts for subscriptions nearing expiry.
+- **Dunning tokens**: short-lived hashed recovery tokens used in SMS links.
+- **Checkout sessions**: payment/renewal attempts created when a customer starts checkout.
+- **Communication credits**: prepaid creator balance used for outbound SMS.
+- **Personal access tokens**: user-scoped API tokens for local testing and future API access.
 
-Scanner behavior:
+Checkout links and dunning links are intentionally separate:
 
-1. Query active subscriptions where `current_period_end` is between now and now + 3 days.
-2. Exclude subscriptions that already have an active unused renewal token for the same period.
-3. Insert a River job for each subscription that needs a reminder.
+- **Checkout links** are user-managed product/payment entry points.
+- **Dunning links** are system-managed recovery links created for renewal reminders.
 
-### River job
+## Local setup
 
-The River worker should process one subscription renewal reminder at a time.
+Start dependencies:
 
-Worker behavior:
-
-1. Load subscription and customer.
-2. Create or reuse a valid renewal token.
-3. Build `/r/:token` link.
-4. Send mock SMS by printing the message.
-5. Record enough state to avoid duplicate messages during repeated scanner runs.
-
-## HTTP endpoints for the MVP
-
-### Internal/API endpoints
-
-These can be JSON endpoints protected by auth middleware:
-
-- `POST /customers`
-- `GET /customers`
-- `POST /subscriptions/test-expiring-soon`
-- `GET /subscriptions`
-- `POST /scanner/run-once`
-
-The manual scanner endpoint is acceptable for prototype speed. It can be removed or locked down later.
-
-### Public renewal endpoints
-
-These are customer-facing and should not require login:
-
-- `GET /r/:token` — validate token and show checkout page.
-- `POST /r/:token/pay` — mock payment success and extend subscription.
-
-## Data consistency rules
-
-Even in a prototype, the renewal path should avoid obvious billing bugs:
-
-- A renewal token can only be used once.
-- A successful mock payment should extend the subscription exactly once.
-- Re-running the scanner should not create unlimited duplicate active tokens.
-- Subscription extension should happen in a database transaction with payment/token updates.
-- Token values should be stored hashed, not raw.
-
-## What we are intentionally not building yet
-
-- Real MoMo provider integration.
-- Real SMS provider integration.
-- Multi-organization support.
-- Plan catalog complexity.
-- Web dashboard polish.
-- Full ledger/accounting system.
-- Production-grade retry/backoff policy.
-
-## Recommended implementation order
-
-1. Add subscription and renewal migrations.
-2. Add `subscription` repository/service for creating a test expiring subscription and extending it.
-3. Add `renewal` token repository/service.
-4. Add mock SMS sender.
-5. Add River renewal reminder job and worker.
-6. Add scanner function and cron registration.
-7. Add `/r/:token` checkout page and mock pay endpoint.
-8. Add a manual seed/run path for the clean MVP demo.
-
-## Local development target
-
-The intended local demo should eventually look like this:
-
-```bash
-# Start dependencies
-# docker compose up -d
-
-# Run migrations
-# go run ./cmd/migrate up
-
-# Start API
-# go run ./cmd/server
-
-# Start worker
-# go run ./cmd/worker
-
-# Start scheduler or trigger scanner manually
-# go run ./cmd/scheduler
+```powershell
+docker compose up -d
 ```
 
-Then create one test subscription, run the scanner, copy the mock SMS link, open it, click mock pay, and verify the expiry date moved forward.
+Set local environment variables in `.env`:
+
+```env
+DATABASE_URL=postgres://leamout:leamout@localhost:5432/leamout?sslmode=disable
+REDIS_URL=redis://localhost:6379/0
+APP_ENV=development
+PORT=8080
+
+API_BASE_URL=http://localhost:8080
+FRONTEND_BASE_URL=http://localhost:3000
+SHORT_BASE_URL=http://localhost:3000
+
+TRUSTED_PROXIES=127.0.0.1,::1
+GEOIP_DATABASE_PATH=./assets/GeoLite2-City.mmdb
+```
+
+Run app and River migrations:
+
+```powershell
+go run ./cmd/migrate up
+```
+
+`cmd/migrate up` should run both Leamout migrations and River's internal queue migrations, so workers can start without missing tables such as `river_queue` or `river_leader`.
+
+Start the three processes in separate terminals:
+
+```powershell
+# Terminal 1
+go run ./cmd/server
+
+# Terminal 2
+go run ./cmd/worker
+
+# Terminal 3
+go run ./cmd/scheduler
+```
+
+For local testing, the scheduler can temporarily use `platformcron.ScheduleMin` instead of the hourly schedule.
+
+## Auth for local API testing
+
+Login in the browser:
+
+```text
+http://localhost:8080/v1/auth/google
+```
+
+After login, create a PAT from the browser console:
+
+```js
+const res = await fetch("http://localhost:8080/v1/personal-access-tokens", {
+  method: "POST",
+  credentials: "include",
+  headers: {
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    name: "local-product-flow-test",
+    metadata: { purpose: "testing real product flow" },
+  }),
+});
+
+const data = await res.json();
+console.log(data.raw_token);
+```
+
+Then use it in PowerShell:
+
+```powershell
+$PAT = "PASTE_RAW_TOKEN_HERE"
+$API = "http://localhost:8080/v1"
+$Headers = @{
+  Authorization = "Bearer $PAT"
+  "Content-Type" = "application/json"
+}
+```
+
+Do not commit or share raw PATs. Revoke test PATs after use.
+
+## Manual product flow test
+
+### 1. Create product + recurring price
+
+```powershell
+$stamp = Get-Date -Format "yyyyMMddHHmmss"
+
+$productBody = @{
+  name = "Leamout Test Membership $stamp"
+  description = "Monthly creator membership for dunning test"
+  prices = @(
+    @{
+      nickname = "Monthly"
+      type = "recurring"
+      unit_amount = 5000
+      currency = "GHS"
+      interval = "month"
+    }
+  )
+} | ConvertTo-Json -Depth 10
+
+$product = Invoke-RestMethod -Method Post -Uri "$API/products" -Headers $Headers -Body $productBody
+$PriceID = $product.prices[0].id
+```
+
+### 2. Create customer
+
+Use `+234` locally to route through the mock SMS provider.
+
+```powershell
+$rand = Get-Random -Minimum 1000000 -Maximum 9999999
+$phone = "+234803$rand"
+
+$customerBody = @{
+  name = "Test Customer $stamp"
+  email = "customer+$stamp@example.com"
+  phone = $phone
+  external_id = "cust_$stamp"
+  address = @{
+    city = "Accra"
+    country = "GH"
+  }
+  metadata = @{
+    test = "dunning-flow"
+  }
+} | ConvertTo-Json -Depth 10
+
+$customer = Invoke-RestMethod -Method Post -Uri "$API/customers" -Headers $Headers -Body $customerBody
+$CustomerID = $customer.id
+```
+
+### 3. Create subscription due within the scan window
+
+```powershell
+$periodStart = (Get-Date).ToUniversalTime().AddDays(-29).ToString("o")
+$periodEnd = (Get-Date).ToUniversalTime().AddHours(24).ToString("o")
+
+$subBody = @{
+  customer_id = $CustomerID
+  price_id = $PriceID
+  status = "active"
+  current_period_start = $periodStart
+  current_period_end = $periodEnd
+  metadata = @{
+    test = "dunning-flow"
+  }
+} | ConvertTo-Json -Depth 10
+
+$subscription = Invoke-RestMethod -Method Post -Uri "$API/subscriptions" -Headers $Headers -Body $subBody
+$SubscriptionID = $subscription.id
+```
+
+### 4. Top up communication credits
+
+```powershell
+$topupBody = @{
+  amount = 1000
+  reference = "local_topup_$stamp"
+  description = "Local dunning flow test topup"
+  metadata = @{
+    test = "dunning-flow"
+  }
+} | ConvertTo-Json -Depth 10
+
+$balance = Invoke-RestMethod -Method Post -Uri "$API/credits/topup" -Headers $Headers -Body $topupBody
+```
+
+### 5. Wait for scheduler + worker
+
+The scheduler should log something like:
+
+```text
+dunning scanner completed scanned=1 enqueued=1 skipped=0
+```
+
+The worker should log a mock SMS:
+
+```text
+[MOCK SMS] to=+234... message="Your Leamout subscription expires soon. Renew here: http://localhost:3000/r/<token>"
+```
+
+Copy the token after `/r/`.
+
+### 6. Open recovery link through backend
+
+Until the Next.js `/r/:token` page or rewrite exists, call the backend directly:
+
+```powershell
+$DunningToken = "PASTE_TOKEN_HERE"
+curl.exe -i "http://localhost:8080/v1/dunning/$DunningToken"
+```
+
+Expected response before the token is used:
+
+```text
+HTTP/1.1 302 Found
+Location: http://localhost:3000/checkout/<client_secret>
+```
+
+Copy the client secret from the `Location` header.
+
+### 7. Fetch checkout session
+
+```powershell
+$ClientSecret = "PASTE_CLIENT_SECRET_HERE"
+$checkout = Invoke-RestMethod -Method Get -Uri "$API/checkout/$ClientSecret"
+$checkout
+```
+
+Expected fields:
+
+```text
+mode   = renewal
+source = dunning
+status = open
+amount = 5000
+currency = GHS
+```
+
+### 8. Confirm checkout
+
+```powershell
+$confirm = Invoke-RestMethod -Method Post -Uri "$API/checkout/$ClientSecret/confirm"
+$confirm
+```
+
+### 9. Verify renewal
+
+```powershell
+$renewedSub = Invoke-RestMethod -Method Get -Uri "$API/subscriptions/$SubscriptionID" -Headers $Headers
+$renewedSub
+```
+
+For a monthly price, `current_period_end` should move forward by one month.
+
+### 10. Verify dunning state
+
+```powershell
+$dunningEvents = Invoke-RestMethod -Method Get -Uri "$API/dunning-events" -Headers $Headers
+$dunningEvents
+```
+
+Expected state:
+
+```text
+status = paid
+sent_at set
+clicked_at set
+paid_at set
+```
+
+Opening the same dunning token after payment should return:
+
+```text
+404 recovery link not found or expired
+```
+
+That proves the token cannot be reused.
+
+### 11. Verify credit ledger
+
+```powershell
+$ledger = Invoke-RestMethod -Method Get -Uri "$API/credits/ledger" -Headers $Headers
+$ledger | Format-Table type, amount, balance_after, provider, destination, description, created_at
+```
+
+Expected local mock route result:
+
+```text
+topup   1000   1000
+ debit    -15    985   mock   +234   Dunning SMS
+```
+
+## Important routes
+
+### Auth
+
+```text
+GET  /v1/auth/google
+GET  /v1/auth/google/callback
+GET  /v1/auth/github
+GET  /v1/auth/github/callback
+POST /v1/auth/logout
+```
+
+### PATs
+
+```text
+GET    /v1/personal-access-tokens
+POST   /v1/personal-access-tokens
+DELETE /v1/personal-access-tokens/:id
+```
+
+### Products, customers, subscriptions
+
+```text
+POST   /v1/products
+GET    /v1/products
+GET    /v1/products/:id
+PATCH  /v1/products/:id
+DELETE /v1/products/:id
+
+POST   /v1/customers
+GET    /v1/customers
+GET    /v1/customers/:id
+PATCH  /v1/customers/:id
+DELETE /v1/customers/:id
+
+POST   /v1/subscriptions
+GET    /v1/subscriptions
+GET    /v1/subscriptions/:id
+PATCH  /v1/subscriptions/:id
+DELETE /v1/subscriptions/:id
+```
+
+### Credits
+
+```text
+GET  /v1/credits
+GET  /v1/credits/ledger
+POST /v1/credits/topup
+```
+
+### Dunning and checkout
+
+```text
+GET  /v1/dunning/:token
+GET  /v1/dunning-events
+GET  /v1/dunning-events/:id
+
+GET  /v1/checkout/:clientSecret
+POST /v1/checkout/:clientSecret/confirm
+```
+
+## Environment design
+
+Use separate base URLs for separate responsibilities:
+
+```env
+API_BASE_URL=https://api.leamout.com
+FRONTEND_BASE_URL=https://leamout.com
+SHORT_BASE_URL=https://lmt.com
+```
+
+Local development:
+
+```env
+API_BASE_URL=http://localhost:8080
+FRONTEND_BASE_URL=http://localhost:3000
+SHORT_BASE_URL=http://localhost:3000
+```
+
+Usage:
+
+- `API_BASE_URL`: OAuth callbacks and backend-owned URLs.
+- `FRONTEND_BASE_URL`: checkout page redirects, for example `/checkout/<client_secret>`.
+- `SHORT_BASE_URL`: SMS links, for example `/r/<token>`.
+
+Production target:
+
+```text
+SMS:      https://lmt.com/r/<token>
+Proxy:    https://api.leamout.com/v1/dunning/<token>
+Checkout: https://leamout.com/checkout/<client_secret>
+API:      https://api.leamout.com/v1/checkout/<client_secret>
+```
+
+## What is intentionally not built yet
+
+- Next.js checkout UI.
+- Real MoMo/payment provider confirmation.
+- Production short-domain deployment.
+- Full creator dashboard.
+- Full organization/team support.
+- Advanced retry/backoff policies.
+- Usage billing prototype.
+- WhatsApp Business API.
+
+## Next milestone
+
+The next milestone is the frontend MVP path:
+
+```text
+Next.js /r/:token or short-domain rewrite
+  ↓
+Next.js /checkout/:client_secret
+  ↓
+GET /v1/checkout/:clientSecret
+  ↓
+show customer/product/subscription details
+  ↓
+confirm checkout
+  ↓
+show renewal success
+```
