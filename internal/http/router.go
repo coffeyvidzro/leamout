@@ -18,12 +18,16 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func (s *Server) BuildEngine() *gin.Engine {
+func (s *Server) BuildEngine() (*gin.Engine, error) {
 	if !s.cfg.IsDevelopment() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
 	router := gin.New()
+
+	if err := router.SetTrustedProxies(s.cfg.TrustedProxies); err != nil {
+		return nil, err
+	}
 
 	// Global Middleware
 	router.Use(gin.Recovery())
@@ -97,5 +101,5 @@ func (s *Server) BuildEngine() *gin.Engine {
 		})
 	})
 
-	return router
+	return router, nil
 }

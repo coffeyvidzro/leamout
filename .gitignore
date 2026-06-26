@@ -3,3 +3,7 @@ bin/
 /tmp/
 *.log
 .DS_Store
+
+
+# Ignore the MaxMind database
+/assets/*.mmdb

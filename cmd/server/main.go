@@ -72,7 +72,11 @@ func main() {
 		arcjetClient,
 	)
 
-	router := serverRegistry.BuildEngine()
+	router, err := serverRegistry.BuildEngine()
+	if err != nil {
+		log.Error("failed to build router", slog.Any("error", err))
+		os.Exit(1)
+	}
 
 	server := &http.Server{
 		Addr:         ":" + cfg.HTTPPort,
