@@ -134,6 +134,7 @@ SELECT id, user_id, customer_id, subscription_id, mode, source, label, amount, c
 	metadata, created_at, updated_at
 FROM checkout_sessions
 WHERE client_secret_hash = $1
+  AND status = 'open'
   AND expires_at > NOW()`
 
 	return r.get(ctx, query, clientSecretHash)
@@ -152,13 +153,7 @@ func (r *Repository) ConfirmByClientSecretHash(ctx context.Context, clientSecret
 	if err != nil {
 		return nil, err
 	}
-	if session.Status == StatusCompleted {
-		if err := tx.Commit(ctx); err != nil {
-			return nil, fmt.Errorf("commit idempotent checkout confirmation: %w", err)
-		}
 
-		return session, nil
-	}
 	if session.Status != StatusOpen {
 		return nil, ErrNotFound
 	}
@@ -212,6 +207,7 @@ SELECT id, user_id, customer_id, subscription_id, mode, source, label, amount, c
 	metadata, created_at, updated_at
 FROM checkout_sessions
 WHERE client_secret_hash = $1
+  AND status = 'open'
   AND expires_at > NOW()
 FOR UPDATE`
 

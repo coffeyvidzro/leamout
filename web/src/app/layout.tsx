@@ -16,10 +16,13 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      suppressHydrationWarning
+      suppressHydrationWarning={true}
       className={`${fontSans.variable} ${fontMono.variable} ${fontHeading.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
+      <body
+        className="min-h-full flex flex-col"
+        suppressHydrationWarning={true}
+      >
         <TooltipProvider>
           <ThemeProvider>{children}</ThemeProvider>
           <Toaster richColors closeButton />
