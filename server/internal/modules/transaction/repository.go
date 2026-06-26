@@ -34,29 +34,15 @@ INSERT INTO transactions (
 	user_id, payment_id, checkout_id, external_id, type, status, currency, amount, occurred_at, metadata
 )
 VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6, $7, $8, $9, $10)
-ON CONFLICT (user_id, external_id) WHERE external_id IS NOT NULL DO UPDATE SET
+ON CONFLICT (user_id, external_id) DO UPDATE SET
 	status = EXCLUDED.status,
 	metadata = transactions.metadata || EXCLUDED.metadata
 RETURNING id, user_id, payment_id, checkout_id, external_id, type, status, currency, amount, occurred_at, metadata, created_at`
 
-	tx, err := scanTransaction(r.db.QueryRow(
-		ctx,
-		query,
-		params.UserID,
-		params.PaymentID,
-		params.CheckoutID,
-		strings.TrimSpace(params.ExternalID),
-		params.Type,
-		params.Status,
-		strings.ToUpper(strings.TrimSpace(params.Currency)),
-		params.Amount,
-		params.OccurredAt,
-		metadata,
-	))
+	tx, err := scanTransaction(r.db.QueryRow(ctx, query, params.UserID, params.PaymentID, params.CheckoutID, strings.TrimSpace(params.ExternalID), params.Type, params.Status, strings.ToUpper(strings.TrimSpace(params.Currency)), params.Amount, params.OccurredAt, metadata))
 	if err != nil {
 		return nil, fmt.Errorf("create transaction: %w", err)
 	}
-
 	return tx, nil
 }
 
@@ -97,27 +83,13 @@ WHERE user_id = $1`
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-
 	return items, nil
 }
 
 func scanTransaction(row pgx.Row) (*Transaction, error) {
 	var item Transaction
 	var metadata []byte
-	if err := row.Scan(
-		&item.ID,
-		&item.UserID,
-		&item.PaymentID,
-		&item.CheckoutID,
-		&item.ExternalID,
-		&item.Type,
-		&item.Status,
-		&item.Currency,
-		&item.Amount,
-		&item.OccurredAt,
-		&metadata,
-		&item.CreatedAt,
-	); err != nil {
+	if err := row.Scan(&item.ID, &item.UserID, &item.PaymentID, &item.CheckoutID, &item.ExternalID, &item.Type, &item.Status, &item.Currency, &item.Amount, &item.OccurredAt, &metadata, &item.CreatedAt); err != nil {
 		return nil, err
 	}
 	if len(metadata) > 0 {
@@ -137,3 +109,5 @@ func encodeMetadata(value map[string]any) ([]byte, error) {
 	}
 	return json.Marshal(value)
 }
+
+var _ = uuid.Nil
