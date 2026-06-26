@@ -1,5 +1,11 @@
-export default async function Page({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+import { ProductDetail } from "@/components/dashboard/product-detail";
 
-  return <div>{id}</div>;
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const routeParams = await params;
+
+  return <ProductDetail productId={routeParams.id} />;
 }
