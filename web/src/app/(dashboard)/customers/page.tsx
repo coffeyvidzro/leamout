@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { Button } from "@/components/ui/button";
@@ -44,7 +45,9 @@ export default function CustomersPage() {
           description="View customers created through Leamout."
         />
 
-        <Button disabled>Add customer</Button>
+        <Button asChild>
+          <Link href="/customers/new">Add customer</Link>
+        </Button>
       </div>
 
       <Card>
