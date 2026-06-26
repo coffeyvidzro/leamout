@@ -81,6 +81,26 @@ func (h *Handler) GetPublic(c *gin.Context) {
 	respondCheckout(c, session, err)
 }
 
+func (h *Handler) Pay(c *gin.Context) {
+	var req PayRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	response, err := h.service.Pay(c.Request.Context(), c.Param("clientSecret"), req)
+	if errors.Is(err, ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "checkout session not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to start payment"})
+		return
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
 func (h *Handler) Confirm(c *gin.Context) {
 	session, err := h.service.Confirm(c.Request.Context(), c.Param("clientSecret"))
 	if errors.Is(err, ErrNotFound) {
