@@ -12,6 +12,8 @@ type Source string
 
 type Status string
 
+type PaymentAttemptStatus string
+
 const (
 	ModePayment      Mode = "payment"
 	ModeSubscription Mode = "subscription"
@@ -26,6 +28,14 @@ const (
 	StatusCompleted Status = "completed"
 	StatusExpired   Status = "expired"
 	StatusCanceled  Status = "canceled"
+
+	PaymentAttemptStatusPending    PaymentAttemptStatus = "pending"
+	PaymentAttemptStatusProcessing PaymentAttemptStatus = "processing"
+	PaymentAttemptStatusSucceeded  PaymentAttemptStatus = "succeeded"
+	PaymentAttemptStatusFailed     PaymentAttemptStatus = "failed"
+	PaymentAttemptStatusCanceled   PaymentAttemptStatus = "canceled"
+	PaymentAttemptStatusExpired    PaymentAttemptStatus = "expired"
+	PaymentAttemptStatusUnknown    PaymentAttemptStatus = "unknown"
 )
 
 type Session struct {
@@ -73,4 +83,50 @@ type UpdateRequest struct {
 	ExpiresAt  *time.Time     `json:"expires_at,omitempty"`
 	Metadata   map[string]any `json:"metadata,omitempty"`
 	CanceledAt *time.Time     `json:"canceled_at,omitempty"`
+}
+
+type PayRequest struct {
+	Country           string `json:"country" binding:"required"`
+	Phone             string `json:"phone" binding:"required"`
+	Operator          string `json:"operator" binding:"required,oneof=mtn telecel at"`
+	CustomerName      string `json:"customer_name" binding:"omitempty,max=160"`
+	CustomerEmail     string `json:"customer_email" binding:"omitempty,email"`
+	PreferredProvider string `json:"preferred_provider" binding:"omitempty,oneof=moolre pawapay"`
+}
+
+type PayResponse struct {
+	CheckoutSessionID string `json:"checkout_session_id"`
+	ExternalRef       string `json:"external_ref"`
+	ProviderID        string `json:"provider_id"`
+	ProviderReference string `json:"provider_reference,omitempty"`
+	Status            string `json:"status"`
+	NextActionType    string `json:"next_action_type"`
+	NextActionURL     string `json:"next_action_url,omitempty"`
+	CustomerMessage   string `json:"customer_message,omitempty"`
+}
+
+type CreatePaymentAttemptParams struct {
+	CheckoutSessionID uuid.UUID
+	UserID            uuid.UUID
+	ExternalRef       string
+	ProviderID        string
+	ProviderReference string
+	Status            PaymentAttemptStatus
+	Amount            int64
+	Currency          string
+	Country           string
+	PaymentMethod     string
+	Operator          string
+	CustomerPhone     string
+	ProviderResponse  []byte
+	Metadata          map[string]string
+}
+
+type ApplyPaymentResultParams struct {
+	ExternalRef       string
+	ProviderID        string
+	ProviderReference string
+	Status            PaymentAttemptStatus
+	ProviderResponse  []byte
+	Metadata          map[string]string
 }
