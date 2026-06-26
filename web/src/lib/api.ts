@@ -4,6 +4,7 @@ export async function apiFetch<T>(
 ): Promise<T> {
   const response = await fetch(`/api/v1${path}`, {
     ...options,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...options?.headers,
