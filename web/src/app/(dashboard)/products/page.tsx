@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { Button } from "@/components/ui/button";
@@ -67,7 +68,9 @@ export default function ProductsPage() {
           description="View products and prices configured for checkout."
         />
 
-        <Button disabled>Add product</Button>
+        <Button asChild>
+          <Link href="/products/new">Add product</Link>
+        </Button>
       </div>
 
       <Card>
