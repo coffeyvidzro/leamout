@@ -73,7 +73,7 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 	patHandler := pat.NewHandler(patService)
 	subscriptionHandler := subscription.NewHandler(subscriptionService)
 	creditsHandler := credits.NewHandler(creditsService)
-	dunningHandler := dunning.NewHandler(dunningService)
+	dunningHandler := dunning.NewHandler(dunningService, s.cfg.FrontendBaseURL)
 
 	//  Initialize Middleware
 	sessionAuthMiddleware := middleware.SessionAuthMiddleware(sessionService)
@@ -82,7 +82,7 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 	// Register Routes
 	v1 := router.Group("/v1")
 	{
-		auth.RegisterRoutes(router, authHandler, sessionAuthMiddleware)
+		auth.RegisterRoutes(v1, authHandler, sessionAuthMiddleware)
 		pat.RegisterRoutes(v1, patHandler, sessionAuthMiddleware)
 		session.RegisterRoutes(v1, sessionHandler, authMiddleware)
 		user.RegisterRoutes(v1, userHandler, authMiddleware)

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/cuffeyvidzro/leamout/internal/http/middleware"
 	"github.com/gin-gonic/gin"
@@ -11,11 +12,15 @@ import (
 )
 
 type Handler struct {
-	service *Service
+	service         *Service
+	checkoutBaseURL string
 }
 
-func NewHandler(service *Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *Service, checkoutBaseURL string) *Handler {
+	return &Handler{
+		service:         service,
+		checkoutBaseURL: strings.TrimRight(checkoutBaseURL, "/"),
+	}
 }
 
 func (h *Handler) OpenRecoveryLink(c *gin.Context) {
@@ -29,7 +34,7 @@ func (h *Handler) OpenRecoveryLink(c *gin.Context) {
 		return
 	}
 
-	c.Redirect(http.StatusFound, "/checkout/"+url.PathEscape(checkoutSession.ClientSecret))
+	c.Redirect(http.StatusFound, h.checkoutBaseURL+"/checkout/"+url.PathEscape(checkoutSession.ClientSecret))
 }
 
 func (h *Handler) List(c *gin.Context) {

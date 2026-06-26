@@ -30,7 +30,8 @@ type ProviderConfig struct {
 type Config struct {
 	AppEnv            string `env:"APP_ENV" envDefault:"development"`
 	HTTPPort          string `env:"HTTP_PORT" envDefault:"8080"`
-	BaseURL           string `env:"BASE_URL" envDefault:"http://localhost:8080"`
+	APIBaseURL        string `env:"API_BASE_URL" envDefault:"http://localhost:8080"`
+	FrontendBaseURL   string `env:"FRONTEND_BASE_URL" envDefault:"http://localhost:3000"`
 	ShortBaseURL      string `env:"SHORT_BASE_URL" envDefault:"http://localhost:3000"`
 	DatabaseURL       string `env:"DATABASE_URL" envDefault:"postgres://postgres:postgres@localhost:5432/leamout?sslmode=disable"`
 	RedisURL          string `env:"REDIS_URL" envDefault:"redis://localhost:6379"`

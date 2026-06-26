@@ -43,12 +43,12 @@ func (s *Server) oauthRegistry() *oauth.Registry {
 		oauth.NewGoogle(oauth.ProviderConfig{
 			ClientID:     s.cfg.Google.ClientID,
 			ClientSecret: s.cfg.Google.ClientSecret,
-			RedirectURL:  s.cfg.BaseURL + "/v1/auth/google/callback",
+			RedirectURL:  s.cfg.APIBaseURL + "/v1/auth/google/callback",
 		}),
 		oauth.NewGitHub(oauth.ProviderConfig{
 			ClientID:     s.cfg.Github.ClientID,
 			ClientSecret: s.cfg.Github.ClientSecret,
-			RedirectURL:  s.cfg.BaseURL + "/v1/auth/github/callback",
+			RedirectURL:  s.cfg.APIBaseURL + "/v1/auth/github/callback",
 		}),
 	)
 }
