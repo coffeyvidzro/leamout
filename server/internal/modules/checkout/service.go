@@ -10,24 +10,23 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cuffeyvidzro/leamout/internal/payment"
-	"github.com/cuffeyvidzro/leamout/internal/payment/provider"
+	modulepayment "github.com/cuffeyvidzro/leamout/internal/modules/payment"
 	"github.com/google/uuid"
 )
 
 const clientSecretBytes = 32
 
-type PaymentInitiator interface {
-	InitiatePayment(ctx context.Context, req payment.InitiatePaymentRequest) (*payment.InitiatePaymentResult, error)
+type PaymentStarter interface {
+	StartCheckoutPayment(ctx context.Context, params modulepayment.StartCheckoutPaymentParams) (*modulepayment.StartCheckoutPaymentResult, error)
 }
 
 type Service struct {
 	repository     *Repository
-	paymentService PaymentInitiator
+	paymentService PaymentStarter
 	webhookURLFor  func(provider string) string
 }
 
-func NewService(repository *Repository, paymentService PaymentInitiator, webhookURLFor func(provider string) string) *Service {
+func NewService(repository *Repository, paymentService PaymentStarter, webhookURLFor func(provider string) string) *Service {
 	return &Service{repository: repository, paymentService: paymentService, webhookURLFor: webhookURLFor}
 }
 
@@ -72,7 +71,6 @@ func (s *Service) Pay(ctx context.Context, clientSecret string, req PayRequest) 
 		return nil, err
 	}
 
-	externalRef := uuid.NewString()
 	metadata := map[string]string{"checkout_session_id": session.ID.String(), "user_id": session.UserID.String()}
 	for key, value := range stringMetadata(session.Metadata) {
 		if _, exists := metadata[key]; !exists {
@@ -80,59 +78,27 @@ func (s *Service) Pay(ctx context.Context, clientSecret string, req PayRequest) 
 		}
 	}
 
-	result, err := s.paymentService.InitiatePayment(ctx, payment.InitiatePaymentRequest{
-		UserID:            session.UserID.String(),
-		ExternalRef:       externalRef,
-		AmountMinor:       session.Amount,
+	result, err := s.paymentService.StartCheckoutPayment(ctx, modulepayment.StartCheckoutPaymentParams{
+		CheckoutID:        session.ID,
+		UserID:            session.UserID,
+		CustomerID:        session.CustomerID,
+		Amount:            session.Amount,
 		Currency:          session.Currency,
 		Country:           req.Country,
-		Method:            provider.PaymentMethodMobileMoney,
-		Operator:          payment.MobileMoneyOperator(req.Operator),
-		PreferredProvider: provider.ID(req.PreferredProvider),
-		Description:       labelOrDefault(session.Label),
-		Customer: payment.Customer{
-			Name:    strings.TrimSpace(req.CustomerName),
-			Email:   strings.TrimSpace(req.CustomerEmail),
-			Phone:   strings.TrimSpace(req.Phone),
-			Country: strings.TrimSpace(req.Country),
-		},
-		CallbackURL: callbackURL(s.webhookURLFor, req.PreferredProvider),
-		ReturnURL:   returnURL(session),
-		Metadata:    metadata,
+		Phone:             req.Phone,
+		Operator:          req.Operator,
+		CustomerName:      req.CustomerName,
+		CustomerEmail:     req.CustomerEmail,
+		PreferredProvider: req.PreferredProvider,
+		Label:             labelOrDefault(session.Label),
+		ReturnURL:         returnURL(session),
+		Metadata:          metadata,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	if err := s.repository.CreatePaymentAttempt(ctx, CreatePaymentAttemptParams{
-		CheckoutSessionID: session.ID,
-		UserID:            session.UserID,
-		ExternalRef:       result.ExternalRef,
-		ProviderID:        string(result.ProviderID),
-		ProviderReference: result.ProviderReference,
-		Status:            PaymentAttemptStatus(result.Status),
-		Amount:            session.Amount,
-		Currency:          session.Currency,
-		Country:           strings.ToUpper(strings.TrimSpace(req.Country)),
-		PaymentMethod:     string(provider.PaymentMethodMobileMoney),
-		Operator:          strings.ToLower(strings.TrimSpace(req.Operator)),
-		CustomerPhone:     payment.NormalizePhone(req.Country, req.Phone),
-		ProviderResponse:  result.ProviderResponse,
-		Metadata:          metadata,
-	}); err != nil {
-		return nil, err
-	}
-
-	return &PayResponse{
-		CheckoutSessionID: session.ID.String(),
-		ExternalRef:       result.ExternalRef,
-		ProviderID:        string(result.ProviderID),
-		ProviderReference: result.ProviderReference,
-		Status:            string(result.Status),
-		NextActionType:    string(result.NextActionType),
-		NextActionURL:     result.NextActionURL,
-		CustomerMessage:   result.CustomerMessage,
-	}, nil
+	return &PayResponse{CheckoutSessionID: session.ID.String(), ExternalRef: result.ExternalRef, ProviderID: result.ProviderID, ProviderReference: result.ProviderReference, Status: string(result.Status), NextActionType: result.NextActionType, NextActionURL: result.NextActionURL, CustomerMessage: result.CustomerMessage}, nil
 }
 
 func (s *Service) Confirm(ctx context.Context, clientSecret string) (*Session, error) {
@@ -171,13 +137,6 @@ func returnURL(session *Session) string {
 		return strings.TrimSpace(*session.SuccessURL)
 	}
 	return ""
-}
-
-func callbackURL(fn func(provider string) string, preferredProvider string) string {
-	if fn == nil || strings.TrimSpace(preferredProvider) == "" {
-		return ""
-	}
-	return fn(strings.TrimSpace(preferredProvider))
 }
 
 func stringMetadata(metadata map[string]any) map[string]string {
