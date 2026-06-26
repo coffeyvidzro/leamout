@@ -123,13 +123,17 @@ export default function SubscriptionsPage() {
                 {subscriptions.map((subscription) => (
                   <TableRow key={subscription.id}>
                     <TableCell>
-                      <span
-                        className={`font-medium capitalize ${getStatusClassName(
-                          subscription.status,
-                        )}`}
-                      >
-                        {subscription.status.replace("_", " ")}
-                      </span>
+                      <Button asChild className="h-auto p-0" variant="link">
+                        <Link href={`/subscriptions/${subscription.id}`}>
+                          <span
+                            className={`font-medium capitalize ${getStatusClassName(
+                              subscription.status,
+                            )}`}
+                          >
+                            {subscription.status.replace("_", " ")}
+                          </span>
+                        </Link>
+                      </Button>
                     </TableCell>
 
                     <TableCell className="font-mono text-xs">
