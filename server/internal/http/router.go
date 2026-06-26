@@ -39,7 +39,6 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 	router.Use(middleware.Geolocation(s.geolocator, s.log))
 
 	// Initialize Repositories
-
 	userRepo := user.NewRepository(s.pgPool)
 	sessionRepo := session.NewRepository(s.pgPool, s.redis)
 	authRepo := auth.NewRepository(s.pgPool)
@@ -51,13 +50,19 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 	creditsRepo := credits.NewRepository(s.pgPool)
 	dunningRepo := dunning.NewRepository(s.pgPool)
 
+	checkoutPaymentHooks := checkout.NewPaymentHooks(checkoutRepo)
+	paymentService, paymentWebhookHandler, err := s.paymentStack(checkoutPaymentHooks)
+	if err != nil {
+		return nil, err
+	}
+
 	//  Initialize Services
 	userService := user.NewService(userRepo)
 	sessionService := session.NewService(sessionRepo)
 	authService := auth.NewService(authRepo, s.oauthRegistry(), sessionService)
 	customerService := customer.NewService(customerRepo)
 	productService := product.NewService(productRepo)
-	checkoutService := checkout.NewService(checkoutRepo)
+	checkoutService := checkout.NewService(checkoutRepo, paymentService, s.cfg.PaymentWebhookURL)
 	patService := pat.NewService(patRepo)
 	subscriptionService := subscription.NewService(subscriptionRepo)
 	creditsService := credits.NewService(creditsRepo)
@@ -93,6 +98,8 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 		credits.RegisterRoutes(v1, creditsHandler, authMiddleware)
 		dunning.RegisterRoutes(v1, dunningHandler, authMiddleware)
 	}
+
+	paymentWebhookHandler.RegisterRoutes(router.Group("/webhooks/payments"))
 
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(nethttp.StatusOK, gin.H{
