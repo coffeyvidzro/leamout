@@ -3,6 +3,7 @@ package middleware
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/arcjet/arcjet-go"
@@ -79,9 +80,15 @@ func Arcjet(client *arcjet.Client, log *slog.Logger) gin.HandlerFunc {
 }
 
 func isExcludedPath(path string) bool {
-	switch path {
-	case "/health", "/favicon.ico":
+	switch {
+	case path == "/health", path == "/favicon.ico":
 		return true
+
+	// Public dunning recovery links are protected by high-entropy tokens.
+	// Do not let bot/security middleware block customers opening SMS links.
+	case strings.HasPrefix(path, "/v1/dunning/"):
+		return true
+
 	default:
 		return false
 	}

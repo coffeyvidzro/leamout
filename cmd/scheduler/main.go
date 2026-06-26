@@ -74,7 +74,7 @@ func main() {
 		return riverClient.Insert(ctx, args, nil)
 	}, log)
 
-	_, err = scheduler.AddJob(platformcron.ScheduleHourly, func() {
+	_, err = scheduler.AddJob(platformcron.ScheduleMin, func() {
 		if _, err := scanner.RunOnce(context.Background()); err != nil {
 			log.Error("dunning scanner failed", slog.Any("error", err))
 		}
