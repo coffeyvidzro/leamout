@@ -1,9 +1,40 @@
-.env
-bin/
-/tmp/
-*.log
+# --- IDE & System ---
 .DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Dependencies & Build Artifacts ---
+# Recursive: Catches node_modules in ANY folder
+**/node_modules/
+**/dist/
+**/build/
+**/bin/
+**/tmp/
+**/.next/
+**/.mintlify/
+**/.cache/
+
+# --- Go Specific ---
+# Exclude compiled binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+
+# --- Secrets ---
+# Use a wildcard to catch .env, .env.local, .env.development, etc.
+.env*
+!.env.example
+
+# --- Logs ---
+*.log
+npm-debug.log*
+yarn-debug.log*
 
 
-# Ignore the MaxMind database
-/assets/*.mmdb
+# --- Local databases / assets ---
+**/GeoLite2-*.mmdb
