@@ -1,8 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
-import type { CheckoutSession } from "@/types/checkout";
-import { apiFetch } from "@/lib/api";
+import { use, useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -12,6 +10,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { apiFetch } from "@/lib/api";
+import type { CheckoutSession } from "@/types/checkout";
 
 type CheckoutPageProps = {
   params: Promise<{
@@ -34,7 +34,8 @@ export default function CheckoutPage({ params }: CheckoutPageProps) {
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function loadCheckout() {
+  // 1. Wrap in useCallback and explicitly list clientSecret as a dependency
+  const loadCheckout = useCallback(async () => {
     try {
       setError(null);
       const data = await apiFetch<CheckoutSession>(`/checkout/${clientSecret}`);
@@ -44,7 +45,7 @@ export default function CheckoutPage({ params }: CheckoutPageProps) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [clientSecret]);
 
   async function confirmPayment() {
     try {
@@ -66,9 +67,10 @@ export default function CheckoutPage({ params }: CheckoutPageProps) {
     }
   }
 
+  // 2. Add loadCheckout to the array. Biome is now fully satisfied.
   useEffect(() => {
     loadCheckout();
-  }, [clientSecret]);
+  }, [loadCheckout]);
 
   if (loading) {
     return (

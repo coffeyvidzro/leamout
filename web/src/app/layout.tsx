@@ -19,10 +19,7 @@ export default function RootLayout({
       suppressHydrationWarning={true}
       className={`${fontSans.variable} ${fontMono.variable} ${fontHeading.variable} h-full antialiased`}
     >
-      <body
-        className="min-h-full flex flex-col"
-        suppressHydrationWarning={true}
-      >
+      <body className="min-h-full flex flex-col">
         <TooltipProvider>
           <ThemeProvider>{children}</ThemeProvider>
           <Toaster richColors closeButton />
