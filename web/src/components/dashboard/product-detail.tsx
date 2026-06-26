@@ -4,12 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -107,7 +102,9 @@ export function ProductDetail({ productId }: ProductDetailProps) {
             <CardTitle className="text-base">Prices</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-semibold">{product.prices.length}</div>
+            <div className="text-2xl font-semibold">
+              {product.prices.length}
+            </div>
           </CardContent>
         </Card>
 

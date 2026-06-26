@@ -4,12 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -69,11 +64,13 @@ export function CustomerDetail({ customerId }: CustomerDetailProps) {
       try {
         setError(null);
 
-        const [customerData, subscriptionData, dunningData] = await Promise.all([
-          apiFetch<Customer>(`/customers/${customerId}`),
-          apiFetch<Subscription[]>("/subscriptions"),
-          apiFetch<DunningAttempt[]>("/dunning-events"),
-        ]);
+        const [customerData, subscriptionData, dunningData] = await Promise.all(
+          [
+            apiFetch<Customer>(`/customers/${customerId}`),
+            apiFetch<Subscription[]>("/subscriptions"),
+            apiFetch<DunningAttempt[]>("/dunning-events"),
+          ],
+        );
 
         setCustomer(customerData);
         setSubscriptions(subscriptionData);
@@ -238,7 +235,9 @@ export function CustomerDetail({ customerId }: CustomerDetailProps) {
               <TableBody>
                 {relatedDunningAttempts.map((attempt) => (
                   <TableRow key={attempt.id}>
-                    <TableCell className="capitalize">{attempt.status}</TableCell>
+                    <TableCell className="capitalize">
+                      {attempt.status}
+                    </TableCell>
                     <TableCell className="capitalize">
                       {attempt.reason.replace("_", " ")}
                     </TableCell>

@@ -50,14 +50,19 @@ export default function DashboardPage() {
       try {
         setError(null);
 
-        const [customerData, productData, subscriptionData, balanceData, dunningData] =
-          await Promise.all([
-            apiFetch<Customer[]>("/customers"),
-            apiFetch<Product[]>("/products"),
-            apiFetch<Subscription[]>("/subscriptions"),
-            apiFetch<CreditBalance>("/credits"),
-            apiFetch<DunningAttempt[]>("/dunning-events"),
-          ]);
+        const [
+          customerData,
+          productData,
+          subscriptionData,
+          balanceData,
+          dunningData,
+        ] = await Promise.all([
+          apiFetch<Customer[]>("/customers"),
+          apiFetch<Product[]>("/products"),
+          apiFetch<Subscription[]>("/subscriptions"),
+          apiFetch<CreditBalance>("/credits"),
+          apiFetch<DunningAttempt[]>("/dunning-events"),
+        ]);
 
         setCustomers(customerData);
         setProducts(productData);

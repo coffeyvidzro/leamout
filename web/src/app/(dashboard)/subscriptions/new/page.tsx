@@ -6,12 +6,7 @@ import type { FormEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiFetch } from "@/lib/api";
@@ -72,7 +67,9 @@ export default function NewSubscriptionPage() {
         setCustomers(customerData);
         setProducts(productData);
         setCustomerId(customerData[0]?.id ?? "");
-        setPriceId(productData.flatMap((product) => product.prices)[0]?.id ?? "");
+        setPriceId(
+          productData.flatMap((product) => product.prices)[0]?.id ?? "",
+        );
       } catch {
         setError("Could not load customers and products.");
       } finally {
@@ -110,7 +107,9 @@ export default function NewSubscriptionPage() {
       router.push("/subscriptions");
       router.refresh();
     } catch {
-      setError("Could not create subscription. Check the details and try again.");
+      setError(
+        "Could not create subscription. Check the details and try again.",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -194,7 +193,9 @@ export default function NewSubscriptionPage() {
                 />
               </div>
 
-              {error ? <p className="text-sm text-destructive">{error}</p> : null}
+              {error ? (
+                <p className="text-sm text-destructive">{error}</p>
+              ) : null}
 
               <div className="flex items-center gap-3">
                 <Button disabled={submitting} type="submit">

@@ -1,20 +1,12 @@
 import type { MetadataRoute } from "next";
 
 export default function robots(): MetadataRoute.Robots {
-  const baseUrl = "https://leamout.com";
-
   return {
     rules: {
       userAgent: "*",
-      allow: ["/", "/features", "/pricing"],
-      
-      disallow: [
-        "/login",
-        "/register",
-        "/checkout/",
-        "/dashboard/",  
-      ],
+      allow: "/",
+      disallow: ["/dashboard/", "/auth/"],
     },
-    sitemap: `${baseUrl}/sitemap.xml`,
+    sitemap: "https://leamout.com/sitemap.xml",
   };
 }

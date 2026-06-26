@@ -4,12 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -56,7 +51,9 @@ function getStatusClassName(status: Subscription["status"]) {
   return "text-muted-foreground";
 }
 
-export function SubscriptionDetail({ subscriptionId }: SubscriptionDetailProps) {
+export function SubscriptionDetail({
+  subscriptionId,
+}: SubscriptionDetailProps) {
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -199,7 +196,9 @@ export function SubscriptionDetail({ subscriptionId }: SubscriptionDetailProps) 
               <div className="text-muted-foreground">Name</div>
               {customer ? (
                 <Button asChild className="h-auto p-0" variant="link">
-                  <Link href={`/customers/${customer.id}`}>{customer.name}</Link>
+                  <Link href={`/customers/${customer.id}`}>
+                    {customer.name}
+                  </Link>
                 </Button>
               ) : (
                 <div className="font-mono text-xs">
@@ -273,7 +272,9 @@ export function SubscriptionDetail({ subscriptionId }: SubscriptionDetailProps) 
               <TableBody>
                 {relatedDunningAttempts.map((attempt) => (
                   <TableRow key={attempt.id}>
-                    <TableCell className="capitalize">{attempt.status}</TableCell>
+                    <TableCell className="capitalize">
+                      {attempt.status}
+                    </TableCell>
                     <TableCell className="capitalize">
                       {attempt.reason.replace("_", " ")}
                     </TableCell>
