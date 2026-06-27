@@ -1,11 +1,13 @@
 package payment
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/cuffeyvidzro/leamout/internal/http/middleware"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 type Handler struct {
@@ -26,4 +28,24 @@ func (h *Handler) List(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, items)
+}
+
+func (h *Handler) Get(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payment id"})
+		return
+	}
+
+	item, err := h.service.Get(c.Request.Context(), middleware.GetUserID(c), id)
+	if errors.Is(err, ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "payment not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch payment"})
+		return
+	}
+
+	c.JSON(http.StatusOK, item)
 }
