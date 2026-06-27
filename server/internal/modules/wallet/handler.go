@@ -1,7 +1,6 @@
 package wallet
 
 import (
-	"errors"
 	"net/http"
 	"strconv"
 
@@ -17,18 +16,18 @@ func NewHandler(service *Service) *Handler {
 	return &Handler{service: service}
 }
 
-func (h *Handler) Get(c *gin.Context) {
-	item, err := h.service.Get(c.Request.Context(), middleware.GetUserID(c), c.Param("currency"))
-	if errors.Is(err, ErrNotFound) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "wallet not found"})
-		return
-	}
+func (h *Handler) List(c *gin.Context) {
+	items, err := h.service.List(c.Request.Context(), ListWalletsParams{
+		UserID:   middleware.GetUserID(c),
+		Country:  c.Query("country"),
+		Currency: c.Query("currency"),
+	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch wallet"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch wallets"})
 		return
 	}
 
-	c.JSON(http.StatusOK, item)
+	c.JSON(http.StatusOK, gin.H{"wallets": items})
 }
 
 func (h *Handler) ListLedger(c *gin.Context) {
@@ -37,7 +36,8 @@ func (h *Handler) ListLedger(c *gin.Context) {
 
 	items, err := h.service.ListLedger(c.Request.Context(), ListLedgerParams{
 		UserID:   middleware.GetUserID(c),
-		Currency: c.Param("currency"),
+		Country:  c.Query("country"),
+		Currency: c.Query("currency"),
 		Limit:    limit,
 		Offset:   offset,
 	})
@@ -46,5 +46,5 @@ func (h *Handler) ListLedger(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, items)
+	c.JSON(http.StatusOK, gin.H{"ledger": items})
 }
