@@ -1,7 +1,6 @@
 package pawapay
 
 import (
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -358,4 +357,13 @@ func customerMessageFromDeposit(resp *PawaDepositResponse) string {
 		return "PawaPay rejected the payment prompt request."
 	}
 	return ""
+}
+
+func addIfNotBlank(metadata map[string]string, key string, value string) {
+	key = strings.TrimSpace(key)
+	value = strings.TrimSpace(value)
+	if metadata == nil || key == "" || value == "" {
+		return
+	}
+	metadata[key] = value
 }
