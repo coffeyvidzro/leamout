@@ -50,7 +50,6 @@ func (s *Service) Create(ctx context.Context, userID uuid.UUID, req CreateReques
 		return nil, err
 	}
 	session.ClientSecret = clientSecret
-
 	return session, nil
 }
 
@@ -88,7 +87,7 @@ func (s *Service) Pay(ctx context.Context, clientSecret string, req PayRequest) 
 		return nil, err
 	}
 
-	quoteReq := QuoteRequest{Country: req.Country, Phone: req.Phone, Operator: req.Operator, PreferredProvider: req.PreferredProvider, Intelligence: req.Intelligence}
+	quoteReq := QuoteRequest{Country: req.Country, Phone: req.Phone, Operator: req.Operator, Intelligence: req.Intelligence}
 	quote, err := s.quoteForSession(session, quoteReq)
 	if err != nil {
 		return nil, err
@@ -103,21 +102,20 @@ func (s *Service) Pay(ctx context.Context, clientSecret string, req PayRequest) 
 	addQuoteMetadata(metadata, quote, req.Intelligence)
 
 	result, err := s.paymentService.StartCheckoutPayment(ctx, modulepayment.StartCheckoutPaymentParams{
-		CheckoutID:        session.ID,
-		UserID:            session.UserID,
-		CustomerID:        session.CustomerID,
-		Amount:            quote.PayableAmount,
-		FeeAmount:         quote.ProcessingFee,
-		Currency:          quote.Currency,
-		Country:           quote.Country,
-		Phone:             req.Phone,
-		Operator:          quote.Operator,
-		CustomerName:      req.CustomerName,
-		CustomerEmail:     req.CustomerEmail,
-		PreferredProvider: req.PreferredProvider,
-		Label:             labelOrDefault(session.Label),
-		ReturnURL:         returnURL(session),
-		Metadata:          metadata,
+		CheckoutID:    session.ID,
+		UserID:        session.UserID,
+		CustomerID:    session.CustomerID,
+		Amount:        quote.PayableAmount,
+		FeeAmount:     quote.ProcessingFee,
+		Currency:      quote.Currency,
+		Country:       quote.Country,
+		Phone:         req.Phone,
+		Operator:      quote.Operator,
+		CustomerName:  req.CustomerName,
+		CustomerEmail: req.CustomerEmail,
+		Label:         labelOrDefault(session.Label),
+		ReturnURL:     returnURL(session),
+		Metadata:      metadata,
 	})
 	if err != nil {
 		return nil, err
@@ -152,21 +150,7 @@ func (s *Service) quoteForSession(session *Session, req QuoteRequest) (*QuoteRes
 	detectedCountry := strings.ToUpper(strings.TrimSpace(req.Intelligence.DetectedCountry))
 	countryMismatch := detectedCountry != "" && detectedCountry != quote.Country
 
-	return &QuoteResponse{
-		CheckoutSessionID: session.ID.String(),
-		Country:           quote.Country,
-		Currency:          quote.Currency,
-		Method:            quote.Method,
-		Operator:          quote.Operator,
-		BaseAmount:        quote.BaseAmount,
-		ProcessingFee:     quote.ProcessingFee,
-		PayableAmount:     quote.PayableAmount,
-		FeeRateBps:        quote.FeeRateBps,
-		FeeFixedAmount:    quote.FeeFixedAmount,
-		FeeMode:           quote.FeeMode,
-		DetectedCountry:   detectedCountry,
-		CountryMismatch:   countryMismatch,
-	}, nil
+	return &QuoteResponse{CheckoutSessionID: session.ID.String(), Country: quote.Country, Currency: quote.Currency, Method: quote.Method, Operator: quote.Operator, BaseAmount: quote.BaseAmount, ProcessingFee: quote.ProcessingFee, PayableAmount: quote.PayableAmount, FeeRateBps: quote.FeeRateBps, FeeFixedAmount: quote.FeeFixedAmount, FeeMode: quote.FeeMode, DetectedCountry: detectedCountry, CountryMismatch: countryMismatch}, nil
 }
 
 func HashClientSecret(clientSecret string) string {
@@ -179,7 +163,6 @@ func newClientSecret() (string, error) {
 	if _, err := rand.Read(bytes); err != nil {
 		return "", err
 	}
-
 	return base64.RawURLEncoding.EncodeToString(bytes), nil
 }
 
@@ -219,7 +202,6 @@ func addQuoteMetadata(metadata map[string]string, quote *QuoteResponse, intellig
 	if metadata == nil || quote == nil {
 		return
 	}
-
 	metadata["base_amount"] = strconv.FormatInt(quote.BaseAmount, 10)
 	metadata["processing_fee"] = strconv.FormatInt(quote.ProcessingFee, 10)
 	metadata["payable_amount"] = strconv.FormatInt(quote.PayableAmount, 10)
@@ -228,7 +210,6 @@ func addQuoteMetadata(metadata map[string]string, quote *QuoteResponse, intellig
 	metadata["fee_mode"] = quote.FeeMode
 	metadata["payment_method"] = quote.Method
 	metadata["operator"] = quote.Operator
-
 	if strings.TrimSpace(intelligence.DetectedCountry) != "" {
 		metadata["detected_country"] = strings.ToUpper(strings.TrimSpace(intelligence.DetectedCountry))
 	}
