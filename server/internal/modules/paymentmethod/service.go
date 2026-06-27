@@ -24,7 +24,7 @@ func (s *Service) List(params ListParams) CatalogResponse {
 		if params.Country != "" && country.Code != params.Country {
 			continue
 		}
-		if params.Currency != "" && !containsString(country.Currencies, params.Currency) {
+		if params.Currency != "" && country.Currency != params.Currency {
 			continue
 		}
 		if params.Status != "" && country.Status != params.Status {
@@ -44,70 +44,70 @@ func (s *Service) List(params ListParams) CatalogResponse {
 
 func defaultCountries() []Country {
 	return []Country{
-		country("GH", "Ghana", "+233", "GHS", []string{"GHS"}, statusAvailable, operators(
+		country("GH", "Ghana", "233", "GHS", statusAvailable, operators(
 			op("mtn", "MTN MoMo"),
 			op("telecel", "Telecel Cash"),
 			op("at", "AT Money"),
 		)),
-		country("BJ", "Benin", "+229", "XOF", []string{"XOF"}, statusComingSoon, operators(
+		country("BJ", "Benin", "229", "XOF", statusComingSoon, operators(
 			op("moov", "Moov"),
 			op("mtn", "MTN"),
 		)),
-		country("BF", "Burkina Faso", "+226", "XOF", []string{"XOF"}, statusComingSoon, operators(
+		country("BF", "Burkina Faso", "226", "XOF", statusComingSoon, operators(
 			op("moov", "Moov"),
 		)),
-		country("CI", "Ivory Coast", "+225", "XOF", []string{"XOF"}, statusComingSoon, operators(
+		country("CI", "Ivory Coast", "225", "XOF", statusComingSoon, operators(
 			op("moov", "Moov"),
 			op("mtn", "MTN"),
 			op("orange", "Orange"),
 		)),
-		country("CM", "Cameroon", "+237", "XAF", []string{"XAF"}, statusComingSoon, operators(
+		country("CM", "Cameroon", "237", "XAF", statusComingSoon, operators(
 			op("mtn", "MTN"),
 			op("orange", "Orange"),
 		)),
-		country("CD", "Democratic Republic of the Congo", "+243", "CDF", []string{"CDF", "USD"}, statusComingSoon, operators(
+		country("CD", "Democratic Republic of the Congo", "243", "CDF", statusComingSoon, operators(
 			op("airtel", "Airtel"),
 			op("orange", "Orange"),
 			op("vodacom", "Vodacom"),
 		)),
-		country("CG", "Congo", "+242", "XAF", []string{"XAF"}, statusComingSoon, operators(
+		country("CG", "Congo", "242", "XAF", statusComingSoon, operators(
 			op("airtel", "Airtel"),
 			op("mtn", "MTN"),
 		)),
-		country("GA", "Gabon", "+241", "XAF", []string{"XAF"}, statusComingSoon, operators(
+		country("GA", "Gabon", "241", "XAF", statusComingSoon, operators(
 			op("airtel", "Airtel"),
 		)),
-		country("KE", "Kenya", "+254", "KES", []string{"KES"}, statusComingSoon, operators(
+		country("KE", "Kenya", "254", "KES", statusComingSoon, operators(
 			op("mpesa", "Safaricom M-Pesa"),
 		)),
-		country("MZ", "Mozambique", "+258", "MZN", []string{"MZN"}, statusComingSoon, operators(
+		country("MZ", "Mozambique", "258", "MZN", statusComingSoon, operators(
 			op("vodacom", "Vodacom"),
 		)),
-		country("MW", "Malawi", "+265", "MWK", []string{"MWK"}, statusComingSoon, operators(
+		country("MW", "Malawi", "265", "MWK", statusComingSoon, operators(
 			op("airtel", "Airtel"),
 			op("tnm", "TNM"),
 		)),
-		country("RW", "Rwanda", "+250", "RWF", []string{"RWF"}, statusComingSoon, operators(
+		country("RW", "Rwanda", "250", "RWF", statusComingSoon, operators(
 			op("airtel", "Airtel"),
 			op("mtn", "MTN"),
 		)),
-		country("SN", "Senegal", "+221", "XOF", []string{"XOF"}, statusComingSoon, operators(
+		country("SN", "Senegal", "221", "XOF", statusComingSoon, operators(
 			op("free", "Free"),
 			op("orange", "Orange"),
 		)),
-		country("SL", "Sierra Leone", "+232", "SLE", []string{"SLE"}, statusComingSoon, operators(
+		country("SL", "Sierra Leone", "232", "SLE", statusComingSoon, operators(
 			op("orange", "Orange"),
 		)),
-		country("TZ", "Tanzania", "+255", "TZS", []string{"TZS"}, statusComingSoon, operators(
+		country("TZ", "Tanzania", "255", "TZS", statusComingSoon, operators(
 			op("airtel", "Airtel"),
 			op("halotel", "Halotel"),
 			op("tigo", "Tigo"),
 		)),
-		country("UG", "Uganda", "+256", "UGX", []string{"UGX"}, statusComingSoon, operators(
+		country("UG", "Uganda", "256", "UGX", statusComingSoon, operators(
 			op("airtel", "Airtel"),
 			op("mtn", "MTN"),
 		)),
-		country("ZM", "Zambia", "+260", "ZMW", []string{"ZMW"}, statusComingSoon, operators(
+		country("ZM", "Zambia", "260", "ZMW", statusComingSoon, operators(
 			op("airtel", "Airtel"),
 			op("mtn", "MTN"),
 			op("zamtel", "Zamtel"),
@@ -115,14 +115,13 @@ func defaultCountries() []Country {
 	}
 }
 
-func country(code, name, callingCode, defaultCurrency string, currencies []string, status string, operators []Operator) Country {
+func country(code, name, prefix, currency string, status string, operators []Operator) Country {
 	return Country{
-		Code:            code,
-		Name:            name,
-		CallingCode:     callingCode,
-		DefaultCurrency: defaultCurrency,
-		Currencies:      currencies,
-		Status:          status,
+		Code:     code,
+		Name:     name,
+		Prefix:   prefix,
+		Currency: currency,
+		Status:   status,
 		SupportedMethods: []Method{
 			{
 				Type:      methodMobileMoney,
@@ -152,15 +151,6 @@ func filterMethods(methods []Method, method string) []Method {
 		}
 	}
 	return out
-}
-
-func containsString(items []string, target string) bool {
-	for _, item := range items {
-		if item == target {
-			return true
-		}
-	}
-	return false
 }
 
 func normalizeParams(params ListParams) ListParams {
