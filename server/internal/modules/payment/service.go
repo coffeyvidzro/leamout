@@ -67,17 +67,18 @@ func (s *Service) StartCheckoutPayment(ctx context.Context, params StartCheckout
 	}
 
 	result, err := s.processor.InitiatePayment(ctx, paymentkernel.InitiatePaymentRequest{
-		UserID:      params.UserID.String(),
-		ExternalRef: externalRef,
-		AmountMinor: params.Amount,
-		Currency:    params.Currency,
-		Country:     params.Country,
-		Method:      provider.PaymentMethodMobileMoney,
-		Operator:    paymentkernel.MobileMoneyOperator(params.Operator),
-		Description: params.Label,
-		Customer:    paymentkernel.Customer{Phone: params.Phone, Country: params.Country, Name: params.CustomerName, Email: params.CustomerEmail},
-		ReturnURL:   params.ReturnURL,
-		Metadata:    metadata,
+		UserID:          params.UserID.String(),
+		ExternalRef:     externalRef,
+		AmountMinor:     params.Amount,
+		Currency:        params.Currency,
+		Country:         params.Country,
+		Method:          provider.PaymentMethodMobileMoney,
+		Operator:        paymentkernel.MobileMoneyOperator(params.Operator),
+		Description:     params.Label,
+		Customer:        paymentkernel.Customer{Phone: params.Phone, Country: params.Country, Name: params.CustomerName, Email: params.CustomerEmail},
+		ReturnURL:       params.ReturnURL,
+		Metadata:        metadata,
+		ProviderOptions: cloneAnyMap(params.ProviderOptions),
 	})
 	if err != nil {
 		return nil, err
@@ -187,6 +188,21 @@ func contextFromPayment(ctx paymentkernel.Context) context.Context {
 		return realCtx
 	}
 	return context.Background()
+}
+
+func cloneAnyMap(src map[string]any) map[string]any {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(src))
+	for key, value := range src {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		out[key] = value
+	}
+	return out
 }
 
 var _ paymentkernel.Hooks = (*Service)(nil)
