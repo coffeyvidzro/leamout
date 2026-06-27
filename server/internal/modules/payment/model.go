@@ -62,6 +62,7 @@ type StartCheckoutPaymentParams struct {
 	UserID            uuid.UUID
 	CustomerID        *uuid.UUID
 	Amount            int64
+	FeeAmount         int64
 	Currency          string
 	Country           string
 	Phone             string
@@ -96,6 +97,7 @@ type CreateParams struct {
 	Status     Status
 	Currency   string
 	Amount     int64
+	FeeAmount  int64
 	Metadata   map[string]any
 }
 
