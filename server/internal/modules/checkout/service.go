@@ -131,6 +131,9 @@ func (s *Service) Pay(ctx context.Context, clientSecret string, req PayRequest) 
 	if err != nil {
 		return nil, err
 	}
+	if result.Status == modulepayment.StatusFailed || result.Status == modulepayment.StatusVoided {
+		return nil, fmt.Errorf("%w: %s", ErrInvalidPaymentRequest, rejectedPaymentMessage(result))
+	}
 
 	return &PayResponse{CheckoutSessionID: session.ID.String(), ExternalRef: result.ExternalRef, ProviderID: result.ProviderID, ProviderReference: result.ProviderReference, Status: string(result.Status), NextActionType: result.NextActionType, NextActionURL: result.NextActionURL, CustomerMessage: result.CustomerMessage, Quote: quote}, nil
 }
@@ -244,4 +247,14 @@ func addQuoteMetadata(metadata map[string]string, quote *QuoteResponse, intellig
 	if quote.CountryMismatch {
 		metadata["country_mismatch"] = "true"
 	}
+}
+
+func rejectedPaymentMessage(result *modulepayment.StartCheckoutPaymentResult) string {
+	if result == nil {
+		return "payment request was rejected"
+	}
+	if message := strings.TrimSpace(result.CustomerMessage); message != "" {
+		return message
+	}
+	return "payment request was rejected"
 }
