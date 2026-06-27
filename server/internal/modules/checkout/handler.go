@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/cuffeyvidzro/leamout/internal/http/middleware"
 	"github.com/gin-gonic/gin"
@@ -96,7 +97,7 @@ func (h *Handler) Quote(c *gin.Context) {
 		return
 	}
 	if errors.Is(err, ErrInvalidPaymentRequest) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported payment method for this checkout"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": checkoutErrorMessage(err)})
 		return
 	}
 	if err != nil {
@@ -122,7 +123,7 @@ func (h *Handler) Pay(c *gin.Context) {
 		return
 	}
 	if errors.Is(err, ErrInvalidPaymentRequest) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported payment method for this checkout"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": checkoutErrorMessage(err)})
 		return
 	}
 	if err != nil {
@@ -168,4 +169,14 @@ func requestIntelligence(c *gin.Context) RequestIntelligence {
 		info.DetectedSource = geo.Source
 	}
 	return info
+}
+
+func checkoutErrorMessage(err error) string {
+	message := strings.TrimSpace(err.Error())
+	message = strings.TrimPrefix(message, ErrInvalidPaymentRequest.Error()+":")
+	message = strings.TrimSpace(message)
+	if message == "" || message == ErrInvalidPaymentRequest.Error() {
+		return "unsupported payment method for this checkout"
+	}
+	return message
 }
