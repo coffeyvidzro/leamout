@@ -77,9 +77,6 @@ func defaultCountries() []Country {
 		country("GA", "Gabon", "241", "XAF", statusComingSoon, operators(
 			op("airtel", "Airtel"),
 		)),
-		country("KE", "Kenya", "254", "KES", statusComingSoon, operators(
-			op("mpesa", "Safaricom M-Pesa"),
-		)),
 		country("MZ", "Mozambique", "258", "MZN", statusComingSoon, operators(
 			op("vodacom", "Vodacom"),
 		)),
@@ -106,11 +103,6 @@ func defaultCountries() []Country {
 		country("UG", "Uganda", "256", "UGX", statusComingSoon, operators(
 			op("airtel", "Airtel"),
 			op("mtn", "MTN"),
-		)),
-		country("ZM", "Zambia", "260", "ZMW", statusComingSoon, operators(
-			op("airtel", "Airtel"),
-			op("mtn", "MTN"),
-			op("zamtel", "Zamtel"),
 		)),
 	}
 }
