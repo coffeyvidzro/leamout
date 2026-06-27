@@ -16,13 +16,11 @@ var (
 )
 
 // MobileMoneyOperator is Leamout's provider-neutral operator/network value.
-// The payment service maps this to each provider's expected field:
+// The payment service maps this to PawaPay provider codes such as
+// MTN_MOMO_GHA, VODAFONE_GHA, or AIRTELTIGO_GHA.
 //
-//   - Moolre: channel 13/6/7
-//   - PawaPay: provider MTN_MOMO_GHA/VODAFONE_GHA/AIRTELTIGO_GHA
-//
-// Keep frontend and database values provider-neutral. Do not expose Moolre or
-// PawaPay codes to the checkout page.
+// Keep frontend and database values provider-neutral. Do not expose PawaPay
+// provider codes to the checkout page.
 type MobileMoneyOperator string
 
 const (
@@ -77,8 +75,6 @@ type InitiatePaymentRequest struct {
 
 	Method   provider.PaymentMethod `json:"method"`
 	Operator MobileMoneyOperator    `json:"operator,omitempty"`
-
-	PreferredProvider provider.ID `json:"preferred_provider,omitempty"`
 
 	Description string   `json:"description,omitempty"`
 	Customer    Customer `json:"customer"`
