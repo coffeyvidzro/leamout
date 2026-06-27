@@ -42,6 +42,16 @@ type Customer struct {
 	Country string `json:"country,omitempty"`
 }
 
+type PredictProviderRequest struct {
+	PhoneNumber string `json:"phone_number"`
+}
+
+type PredictProviderResult struct {
+	Country      string `json:"country"`
+	ProviderCode string `json:"provider_code"`
+	PhoneNumber  string `json:"phone_number"`
+}
+
 type InitiatePaymentRequest struct {
 	UserID string `json:"user_id"`
 	ExternalRef string `json:"external_ref"`
