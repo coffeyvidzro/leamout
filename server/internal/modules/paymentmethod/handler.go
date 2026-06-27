@@ -19,6 +19,7 @@ func (h *Handler) List(c *gin.Context) {
 		Country:  c.Query("country"),
 		Currency: c.Query("currency"),
 		Method:   c.Query("method"),
+		Status:   c.Query("status"),
 	})
 
 	c.JSON(http.StatusOK, items)
