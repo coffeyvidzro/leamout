@@ -103,7 +103,6 @@ var pawaPayMVPRules = []PawaPayMarketRule{
 	{Country: "GH", CountryAlpha3: "GHA", CountryName: "Ghana", PhonePrefix: "233", Currency: "GHS", Method: MethodMobileMoney, Operator: "at", OperatorDisplayName: "AT", ProviderCode: "AIRTELTIGO_GHA", MinAmountMinor: 100, MaxAmountMinor: 1000000, DecimalMode: "TWO_PLACES", CollectionFeeBps: 200, FeeMode: FeeModePassThrough, FeeConfigured: true},
 	{Country: "GH", CountryAlpha3: "GHA", CountryName: "Ghana", PhonePrefix: "233", Currency: "GHS", Method: MethodMobileMoney, Operator: "mtn", OperatorDisplayName: "MTN", ProviderCode: "MTN_MOMO_GHA", MinAmountMinor: 100, MaxAmountMinor: 1500000, DecimalMode: "TWO_PLACES", CollectionFeeBps: 200, FeeMode: FeeModePassThrough, FeeConfigured: true},
 	{Country: "GH", CountryAlpha3: "GHA", CountryName: "Ghana", PhonePrefix: "233", Currency: "GHS", Method: MethodMobileMoney, Operator: "telecel", OperatorDisplayName: "Telecel", ProviderCode: "VODAFONE_GHA", MinAmountMinor: 100, MaxAmountMinor: 1500000, DecimalMode: "TWO_PLACES", CollectionFeeBps: 200, FeeMode: FeeModePassThrough, FeeConfigured: true},
-	{Country: "MZ", CountryAlpha3: "MOZ", CountryName: "Mozambique", PhonePrefix: "258", Currency: "MZN", Method: MethodMobileMoney, Operator: "vodacom", OperatorDisplayName: "Vodacom", ProviderCode: "VODACOM_MOZ", MinAmountMinor: 1, MaxAmountMinor: 12500000, DecimalMode: "TWO_PLACES", CollectionFeeBps: 0, FeeMode: FeeModePassThrough, FeeConfigured: false},
 	{Country: "MW", CountryAlpha3: "MWI", CountryName: "Malawi", PhonePrefix: "265", Currency: "MWK", Method: MethodMobileMoney, Operator: "airtel", OperatorDisplayName: "Airtel", ProviderCode: "AIRTEL_MWI", MinAmountMinor: 5000, MaxAmountMinor: 75000000, DecimalMode: "TWO_PLACES", CollectionFeeBps: 333, FeeMode: FeeModePassThrough, FeeConfigured: true},
 	{Country: "MW", CountryAlpha3: "MWI", CountryName: "Malawi", PhonePrefix: "265", Currency: "MWK", Method: MethodMobileMoney, Operator: "tnm", OperatorDisplayName: "TNM", ProviderCode: "TNM_MWI", MinAmountMinor: 5000, MaxAmountMinor: 75000000, DecimalMode: "TWO_PLACES", CollectionFeeBps: 333, FeeMode: FeeModePassThrough, FeeConfigured: true},
 	{Country: "RW", CountryAlpha3: "RWA", CountryName: "Rwanda", PhonePrefix: "250", Currency: "RWF", Method: MethodMobileMoney, Operator: "airtel", OperatorDisplayName: "Airtel", ProviderCode: "AIRTEL_RWA", MinAmountMinor: 100, MaxAmountMinor: 1500000, DecimalMode: "NONE", CollectionFeeBps: 250, FeeMode: FeeModePassThrough, FeeConfigured: true},
@@ -137,8 +136,6 @@ func normalizeCountry(country string) string {
 		return "GA"
 	case "GHA":
 		return "GH"
-	case "MOZ":
-		return "MZ"
 	case "MWI":
 		return "MW"
 	case "RWA":
