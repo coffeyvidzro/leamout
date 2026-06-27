@@ -25,8 +25,6 @@ var supportedCountryCurrencies = map[string]string{
 	"GAB": "XAF",
 	"GH":  "GHS",
 	"GHA": "GHS",
-	"KE":  "KES",
-	"KEN": "KES",
 	"MZ":  "MZN",
 	"MOZ": "MZN",
 	"MW":  "MWK",
@@ -41,8 +39,6 @@ var supportedCountryCurrencies = map[string]string{
 	"TZA": "TZS",
 	"UG":  "UGX",
 	"UGA": "UGX",
-	"ZM":  "ZMW",
-	"ZMB": "ZMW",
 }
 
 type PawapayProvider struct {
@@ -63,11 +59,10 @@ func (p *PawapayProvider) Name() string {
 
 func (p *PawapayProvider) Capabilities() provider.Capabilities {
 	return provider.Capabilities{
-		// Leamout MVP uses PawaPay as the only aggregator, but markets are not
-		// hardlocked to Ghana. Public availability is controlled by the payment
-		// method catalog and fee/operator rules.
-		Countries:  []string{"BJ", "BEN", "BF", "BFA", "CI", "CIV", "CM", "CMR", "CD", "COD", "CG", "COG", "GA", "GAB", "GH", "GHA", "KE", "KEN", "MZ", "MOZ", "MW", "MWI", "RW", "RWA", "SN", "SEN", "SL", "SLE", "TZ", "TZA", "UG", "UGA", "ZM", "ZMB"},
-		Currencies: []string{"CDF", "GHS", "KES", "MWK", "MZN", "RWF", "SLE", "TZS", "UGX", "XAF", "XOF", "ZMW"},
+		// Leamout MVP uses PawaPay as the only aggregator. Kenya and Zambia are
+		// intentionally excluded until tiered fee rules are implemented.
+		Countries:  []string{"BJ", "BEN", "BF", "BFA", "CI", "CIV", "CM", "CMR", "CD", "COD", "CG", "COG", "GA", "GAB", "GH", "GHA", "MZ", "MOZ", "MW", "MWI", "RW", "RWA", "SN", "SEN", "SL", "SLE", "TZ", "TZA", "UG", "UGA"},
+		Currencies: []string{"CDF", "GHS", "MWK", "MZN", "RWF", "SLE", "TZS", "UGX", "XAF", "XOF"},
 		Methods: []provider.PaymentMethod{
 			provider.PaymentMethodMobileMoney,
 		},
