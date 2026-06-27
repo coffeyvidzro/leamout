@@ -18,6 +18,10 @@ const navItems = [
     href: "/subscriptions",
   },
   {
+    label: "Wallet",
+    href: "/wallet",
+  },
+  {
     label: "Credits",
     href: "/credits",
   },
