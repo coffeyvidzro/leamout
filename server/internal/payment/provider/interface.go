@@ -11,6 +11,10 @@ type ID string
 
 const (
 	ProviderPawaPay ID = "pawapay"
+
+	// ProviderMoolre is kept only so older generic routing code can compile while
+	// the MVP runtime registers PawaPay as the only payment aggregator.
+	ProviderMoolre ID = "moolre"
 )
 
 type PaymentMethod string
@@ -118,7 +122,7 @@ type InitiatePaymentRequest struct {
 }
 
 type InitiatePaymentResponse struct {
-	ProviderID providerIDAlias `json:"provider_id"`
+	ProviderID ID `json:"provider_id"`
 
 	ExternalRef       string `json:"external_ref"`
 	ProviderReference string `json:"provider_reference,omitempty"`
@@ -132,9 +136,6 @@ type InitiatePaymentResponse struct {
 	ProviderResponse []byte            `json:"provider_response,omitempty"`
 	Metadata         map[string]string `json:"metadata,omitempty"`
 }
-
-// providerIDAlias keeps the public JSON name stable while avoiding an import cycle in generated docs.
-type providerIDAlias = ID
 
 type VerifyPaymentRequest struct {
 	ExternalRef       string `json:"external_ref,omitempty"`
