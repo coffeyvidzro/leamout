@@ -28,6 +28,13 @@ func (s *Service) Create(ctx context.Context, params CreateParams) (*Transaction
 	return s.repository.Create(ctx, params)
 }
 
+func (s *Service) Get(ctx context.Context, userID, id uuid.UUID) (*Transaction, error) {
+	if userID == uuid.Nil || id == uuid.Nil {
+		return nil, ErrInvalidTransaction
+	}
+	return s.repository.Get(ctx, userID, id)
+}
+
 func (s *Service) List(ctx context.Context, params ListParams) ([]Transaction, error) {
 	return s.repository.List(ctx, params)
 }
