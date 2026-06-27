@@ -11,6 +11,19 @@ import (
 
 const mobileMoneyPartyType = "MMO"
 
+var depositMetadataKeys = []string{
+	"checkout_session_id",
+	"user_id",
+	"country",
+	"currency",
+	"operator",
+	"pawapay_provider",
+	"base_amount",
+	"processing_fee",
+	"payable_amount",
+	"fee_rate_bps",
+}
+
 func FromInternal(req provider.InitiatePaymentRequest) (*PawaDepositRequest, error) {
 	if strings.TrimSpace(req.ExternalRef) == "" {
 		return nil, fmt.Errorf("%w: external_ref is required", provider.ErrProviderInvalidRequest)
@@ -223,11 +236,10 @@ func metadataFrom(metadata map[string]string) []PawaMetadataField {
 		return nil
 	}
 
-	out := make([]PawaMetadataField, 0, len(metadata))
-	for key, value := range metadata {
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
-		if key == "" || value == "" {
+	out := make([]PawaMetadataField, 0, len(depositMetadataKeys))
+	for _, key := range depositMetadataKeys {
+		value := strings.TrimSpace(metadata[key])
+		if value == "" {
 			continue
 		}
 
