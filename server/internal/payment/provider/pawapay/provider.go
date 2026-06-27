@@ -6,38 +6,8 @@ import (
 	"strings"
 
 	"github.com/cuffeyvidzro/leamout/internal/payment/provider"
+	paymentregistry "github.com/cuffeyvidzro/leamout/internal/payment/registry"
 )
-
-var supportedCountryCurrencies = map[string]string{
-	"BJ":  "XOF",
-	"BEN": "XOF",
-	"BF":  "XOF",
-	"BFA": "XOF",
-	"CI":  "XOF",
-	"CIV": "XOF",
-	"CM":  "XAF",
-	"CMR": "XAF",
-	"CD":  "CDF",
-	"COD": "CDF",
-	"CG":  "XAF",
-	"COG": "XAF",
-	"GA":  "XAF",
-	"GAB": "XAF",
-	"GH":  "GHS",
-	"GHA": "GHS",
-	"MW":  "MWK",
-	"MWI": "MWK",
-	"RW":  "RWF",
-	"RWA": "RWF",
-	"SN":  "XOF",
-	"SEN": "XOF",
-	"SL":  "SLE",
-	"SLE": "SLE",
-	"TZ":  "TZS",
-	"TZA": "TZS",
-	"UG":  "UGX",
-	"UGA": "UGX",
-}
 
 type PawapayProvider struct {
 	client *Client
@@ -56,11 +26,18 @@ func (p *PawapayProvider) Name() string {
 }
 
 func (p *PawapayProvider) Capabilities() provider.Capabilities {
+	rules := paymentregistry.PawaPayMVPRules()
+	countries := make([]string, 0, len(rules)*2)
+	currencies := make([]string, 0, len(rules))
+
+	for _, rule := range rules {
+		countries = append(countries, rule.Country, rule.CountryAlpha3)
+		currencies = append(currencies, rule.Currency)
+	}
+
 	return provider.Capabilities{
-		// Leamout MVP uses PawaPay as the only aggregator. Kenya, Mozambique,
-		// and Zambia are intentionally excluded until their fee rules are ready.
-		Countries:  []string{"BJ", "BEN", "BF", "BFA", "CI", "CIV", "CM", "CMR", "CD", "COD", "CG", "COG", "GA", "GAB", "GH", "GHA", "MW", "MWI", "RW", "RWA", "SN", "SEN", "SL", "SLE", "TZ", "TZA", "UG", "UGA"},
-		Currencies: []string{"CDF", "GHS", "MWK", "RWF", "SLE", "TZS", "UGX", "XAF", "XOF"},
+		Countries:  uniqueStrings(countries),
+		Currencies: uniqueStrings(currencies),
 		Methods: []provider.PaymentMethod{
 			provider.PaymentMethodMobileMoney,
 		},
@@ -154,7 +131,7 @@ func (p *PawapayProvider) ParseWebhook(ctx context.Context, req provider.Webhook
 
 func (p *PawapayProvider) validateRequest(req provider.InitiatePaymentRequest) error {
 	country := strings.ToUpper(strings.TrimSpace(req.Country))
-	expectedCurrency, ok := supportedCountryCurrencies[country]
+	expectedCurrency, ok := supportedCurrencyForCountry(country)
 	if country != "" && !ok {
 		return provider.ErrProviderUnsupportedCountry
 	}
@@ -172,6 +149,33 @@ func (p *PawapayProvider) validateRequest(req provider.InitiatePaymentRequest) e
 	}
 
 	return nil
+}
+
+func supportedCurrencyForCountry(country string) (string, bool) {
+	country = strings.ToUpper(strings.TrimSpace(country))
+	for _, rule := range paymentregistry.PawaPayMVPRules() {
+		if rule.Country == country || rule.CountryAlpha3 == country {
+			return rule.Currency, true
+		}
+	}
+	return "", false
+}
+
+func uniqueStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.ToUpper(strings.TrimSpace(value))
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 var _ provider.ProviderPredictor = (*PawapayProvider)(nil)
