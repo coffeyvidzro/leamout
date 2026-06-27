@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/cuffeyvidzro/leamout/internal/payment/provider"
+	paymentregistry "github.com/cuffeyvidzro/leamout/internal/payment/registry"
 )
 
 const (
@@ -31,11 +32,9 @@ type Route struct {
 
 func DefaultConfig() Config {
 	return Config{
-		EnabledProviders: []provider.ID{provider.ProviderPawaPay},
-		DefaultProvider:  provider.ProviderPawaPay,
-		Routes: []Route{
-			{Country: "GH", Currency: "GHS", Method: provider.PaymentMethodMobileMoney, Providers: []provider.ID{provider.ProviderPawaPay}},
-		},
+		EnabledProviders:   []provider.ID{provider.ProviderPawaPay},
+		DefaultProvider:    provider.ProviderPawaPay,
+		Routes:             pawaPayRegistryRoutes(),
 		AllowFallback:      false,
 		StrictCapabilities: true,
 	}
@@ -67,16 +66,20 @@ func (c Config) normalized() Config {
 	out.AllowFallback = false
 
 	out.Routes = make([]Route, 0, len(c.Routes))
+	seenRoutes := map[string]struct{}{}
 	for _, route := range c.Routes {
 		route = route.normalized()
 		if route.Country == "" || route.Currency == "" || route.Method == "" {
 			continue
 		}
-		route.Providers = []provider.ID{provider.ProviderPawaPay}
+		if _, exists := seenRoutes[route.key()]; exists {
+			continue
+		}
+		seenRoutes[route.key()] = struct{}{}
 		out.Routes = append(out.Routes, route)
 	}
 	if len(out.Routes) == 0 {
-		out.Routes = DefaultConfig().Routes
+		out.Routes = pawaPayRegistryRoutes()
 	}
 
 	sort.SliceStable(out.Routes, func(i, j int) bool {
@@ -151,6 +154,34 @@ func routeKey(country, currency string, method provider.PaymentMethod) string {
 	return normalizeCountry(country) + "_" + normalizeCurrency(currency) + "_" + strings.ToUpper(string(normalizeMethod(method)))
 }
 
+func pawaPayRegistryRoutes() []Route {
+	rules := paymentregistry.PawaPayMVPRules()
+	routes := make([]Route, 0, len(rules))
+	seenRoutes := map[string]struct{}{}
+
+	for _, rule := range rules {
+		route := Route{
+			Country:   rule.Country,
+			Currency:  rule.Currency,
+			Method:    provider.PaymentMethod(rule.Method),
+			Providers: []provider.ID{provider.ProviderPawaPay},
+		}.normalized()
+		if route.Country == "" || route.Currency == "" || route.Method == "" {
+			continue
+		}
+		if _, exists := seenRoutes[route.key()]; exists {
+			continue
+		}
+		seenRoutes[route.key()] = struct{}{}
+		routes = append(routes, route)
+	}
+
+	sort.SliceStable(routes, func(i, j int) bool {
+		return routes[i].key() < routes[j].key()
+	})
+	return routes
+}
+
 func envMap(environ []string) map[string]string {
 	out := make(map[string]string, len(environ))
 	for _, item := range environ {
@@ -159,35 +190,6 @@ func envMap(environ []string) map[string]string {
 			continue
 		}
 		out[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
-	}
-	return out
-}
-
-func normalizeProviderIDs(ids []provider.ID) []provider.ID {
-	out := make([]provider.ID, 0, len(ids))
-	for _, id := range ids {
-		id = normalizeProviderID(string(id))
-		if id == "" {
-			continue
-		}
-		out = append(out, id)
-	}
-	return dedupeProviderIDs(out)
-}
-
-func dedupeProviderIDs(ids []provider.ID) []provider.ID {
-	seen := map[provider.ID]struct{}{}
-	out := make([]provider.ID, 0, len(ids))
-	for _, id := range ids {
-		id = normalizeProviderID(string(id))
-		if id == "" {
-			continue
-		}
-		if _, ok := seen[id]; ok {
-			continue
-		}
-		seen[id] = struct{}{}
-		out = append(out, id)
 	}
 	return out
 }
