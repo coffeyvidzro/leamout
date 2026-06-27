@@ -30,6 +30,7 @@ type ProviderConfig struct {
 type MoolreConfig struct {
 	BaseURL       string `env:"BASE_URL"`
 	APIUser       string `env:"API_USER"`
+	APIKey        string `env:"API_KEY"`
 	APIPubKey     string `env:"API_PUBKEY"`
 	AccountNumber string `env:"ACCOUNT_NUMBER"`
 }

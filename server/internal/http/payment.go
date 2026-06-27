@@ -14,6 +14,7 @@ func (s *Server) paymentProviders() []provider.Provider {
 		moolre.NewProviderFromConfig(moolre.Config{
 			BaseURL:       s.cfg.Moolre.BaseURL,
 			APIUser:       s.cfg.Moolre.APIUser,
+			APIKey:        s.cfg.Moolre.APIKey,
 			APIPubKey:     s.cfg.Moolre.APIPubKey,
 			AccountNumber: s.cfg.Moolre.AccountNumber,
 		}),
