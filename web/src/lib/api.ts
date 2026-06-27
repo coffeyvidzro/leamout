@@ -1,3 +1,18 @@
+type APIErrorPayload = {
+  error?: string;
+  message?: string;
+};
+
+export class APIError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "APIError";
+    this.status = status;
+  }
+}
+
 export async function apiFetch<T>(
   path: string,
   options?: RequestInit,
@@ -12,8 +27,22 @@ export async function apiFetch<T>(
   });
 
   if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`);
+    throw new APIError(response.status, await errorMessageFromResponse(response));
   }
 
   return response.json() as Promise<T>;
+}
+
+async function errorMessageFromResponse(response: Response) {
+  try {
+    const payload = (await response.json()) as APIErrorPayload;
+    const message = payload.error ?? payload.message;
+    if (typeof message === "string" && message.trim() !== "") {
+      return message.trim();
+    }
+  } catch {
+    // Fall through to the generic status message below.
+  }
+
+  return `Request failed with status ${response.status}`;
 }

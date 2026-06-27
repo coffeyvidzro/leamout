@@ -64,6 +64,9 @@ const countryOptions: CountryOption[] = [
   },
 ];
 
+const fallbackPaymentError =
+  "We could not send the payment prompt. Check the country, network, and number, then try again.";
+
 function formatMoney(amount?: number, currency = "GHS") {
   return new Intl.NumberFormat("en-GH", {
     style: "currency",
@@ -80,6 +83,13 @@ function countryOptionFor(country: CheckoutCountry) {
     countryOptions.find((option) => option.value === country) ??
     countryOptions[0]
   );
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message.trim() !== "") {
+    return error.message.trim();
+  }
+  return fallback;
 }
 
 export default function CheckoutPage({ params }: CheckoutPageProps) {
@@ -162,10 +172,10 @@ export default function CheckoutPage({ params }: CheckoutPageProps) {
       setPayment(data);
       setAwaitingApproval(true);
       await loadCheckout();
-    } catch {
-      setError(
-        "We could not send the payment prompt. Check the country, network, and number, then try again.",
-      );
+    } catch (err) {
+      setAwaitingApproval(false);
+      setPayment(null);
+      setError(errorMessage(err, fallbackPaymentError));
     } finally {
       setPaying(false);
     }
