@@ -91,7 +91,7 @@ func ToInitiateResponse(resp *PawaDepositResponse, raw []byte) *provider.Initiat
 		Status:            mapPawaStatus(resp.Status),
 		NextActionType:    nextActionType(resp),
 		NextActionURL:     resp.AuthorizationURL,
-		CustomerMessage:   resp.CustomerMessage,
+		CustomerMessage:   customerMessageFromDeposit(resp),
 		ProviderResponse:  raw,
 		Metadata:          metadata,
 	}
@@ -339,22 +339,23 @@ func statementDescription(req provider.InitiatePaymentRequest) string {
 	return req.Description
 }
 
-func addIfNotBlank(metadata map[string]string, key string, value string) {
-	value = strings.TrimSpace(value)
-	if value != "" {
-		metadata[key] = value
+func customerMessageFromDeposit(resp *PawaDepositResponse) string {
+	if resp == nil {
+		return ""
 	}
-}
-
-func rawJSON(v any) []byte {
-	if v == nil {
-		return nil
+	if message := strings.TrimSpace(resp.CustomerMessage); message != "" {
+		return message
 	}
-
-	raw, err := json.Marshal(v)
-	if err != nil {
-		return nil
+	if resp.FailureReason != nil {
+		if message := strings.TrimSpace(resp.FailureReason.FailureMessage); message != "" {
+			return message
+		}
+		if code := strings.TrimSpace(resp.FailureReason.FailureCode); code != "" {
+			return code
+		}
 	}
-
-	return raw
+	if mapPawaStatus(resp.Status) == provider.PaymentStatusFailed {
+		return "PawaPay rejected the payment prompt request."
+	}
+	return ""
 }
