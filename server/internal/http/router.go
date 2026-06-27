@@ -11,6 +11,7 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/modules/customer"
 	"github.com/cuffeyvidzro/leamout/internal/modules/dunning"
 	modulepayment "github.com/cuffeyvidzro/leamout/internal/modules/payment"
+	"github.com/cuffeyvidzro/leamout/internal/modules/paymentmethod"
 	"github.com/cuffeyvidzro/leamout/internal/modules/pat"
 	"github.com/cuffeyvidzro/leamout/internal/modules/product"
 	"github.com/cuffeyvidzro/leamout/internal/modules/session"
@@ -73,6 +74,7 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 	subscriptionService := subscription.NewService(subscriptionRepo)
 	creditsService := credits.NewService(creditsRepo)
 	dunningService := dunning.NewService(dunningRepo, checkoutService)
+	paymentMethodService := paymentmethod.NewService()
 
 	userHandler := user.NewHandler(userService)
 	sessionHandler := session.NewHandler(sessionService)
@@ -87,12 +89,14 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 	paymentHandler := modulepayment.NewHandler(paymentService)
 	transactionHandler := transaction.NewHandler(transactionService)
 	walletHandler := wallet.NewHandler(walletService)
+	paymentMethodHandler := paymentmethod.NewHandler(paymentMethodService)
 
 	sessionAuthMiddleware := middleware.SessionAuthMiddleware(sessionService)
 	authMiddleware := middleware.AuthMiddleware(sessionService, patService)
 
 	v1 := router.Group("/v1")
 	{
+		paymentmethod.RegisterRoutes(v1, paymentMethodHandler)
 		auth.RegisterRoutes(v1, authHandler, sessionAuthMiddleware)
 		pat.RegisterRoutes(v1, patHandler, sessionAuthMiddleware)
 		session.RegisterRoutes(v1, sessionHandler, authMiddleware)
