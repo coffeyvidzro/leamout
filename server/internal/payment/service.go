@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/cuffeyvidzro/leamout/internal/payment/provider"
+	paymentregistry "github.com/cuffeyvidzro/leamout/internal/payment/registry"
 	"github.com/cuffeyvidzro/leamout/internal/payment/routing"
 )
 
@@ -26,7 +27,7 @@ type Router interface {
 //   - call provider.VerifyPayment
 //   - reconcile webhook events by verifying payment status
 //
-// It must not import moolre, pawapay, checkout, dunning, or subscription.
+// It must not import checkout, dunning, or subscription.
 type Service struct {
 	router Router
 	cfg    Config
@@ -62,7 +63,7 @@ func NewServiceWithDefaults(router Router, hooks Hooks) *Service {
 func NewServiceWithoutWebhookVerification(router Router, hooks Hooks) *Service {
 	cfg := DefaultConfig()
 	cfg.VerifyWebhookPayments = false
-	return &Service{router: router, cfg: cfg, hooks: normalizeHooks(hooks)}
+	return NewService(router, cfg, normalizeHooks(hooks))
 }
 
 func (s *Service) InitiatePayment(ctx context.Context, req InitiatePaymentRequest) (*InitiatePaymentResult, error) {
@@ -93,6 +94,7 @@ func (s *Service) InitiatePayment(ctx context.Context, req InitiatePaymentReques
 	providerReq.ProviderOptions = enrichProviderOptions(
 		selectedProvider.ID(),
 		req.Country,
+		req.Currency,
 		req.Operator,
 		providerReq.ProviderOptions,
 	)
@@ -362,7 +364,7 @@ func routeInfoFrom(result *routing.RouteResult) RouteInfo {
 	return info
 }
 
-func enrichProviderOptions(providerID provider.ID, country string, operator MobileMoneyOperator, options map[string]any) map[string]any {
+func enrichProviderOptions(providerID provider.ID, country string, currency string, operator MobileMoneyOperator, options map[string]any) map[string]any {
 	out := cloneAnyMap(options)
 	if out == nil {
 		out = map[string]any{}
@@ -380,16 +382,9 @@ func enrichProviderOptions(providerID provider.ID, country string, operator Mobi
 		out["network"] = string(operator)
 	}
 
-	switch normalizeProviderID(providerID) {
-	case provider.ProviderMoolre:
-		if _, exists := out["channel"]; !exists {
-			if channel := moolreChannel(operator); channel != "" {
-				out["channel"] = channel
-			}
-		}
-	case provider.ProviderPawaPay:
+	if normalizeProviderID(providerID) == provider.ProviderPawaPay {
 		if _, exists := out["provider"]; !exists {
-			if code := pawapayProviderCode(country, operator); code != "" {
+			if code := pawapayProviderCode(country, currency, operator); code != "" {
 				out["provider"] = code
 			}
 		}
@@ -398,39 +393,21 @@ func enrichProviderOptions(providerID provider.ID, country string, operator Mobi
 	return out
 }
 
-func moolreChannel(operator MobileMoneyOperator) string {
-	switch normalizeOperator(operator) {
-	case MobileMoneyOperatorMTN:
-		return "13"
-	case MobileMoneyOperatorTelecel:
-		return "6"
-	case MobileMoneyOperatorAT:
-		return "7"
-	default:
-		return ""
-	}
-}
-
-func pawapayProviderCode(country string, operator MobileMoneyOperator) string {
-	country = normalizeCountry(country)
-	if country != "GH" && country != "GHA" {
+func pawapayProviderCode(country string, currency string, operator MobileMoneyOperator) string {
+	operator = normalizeOperator(operator)
+	if operator == "" {
 		return ""
 	}
 
-	switch normalizeOperator(operator) {
-	case MobileMoneyOperatorMTN:
-		return "MTN_MOMO_GHA"
-	case MobileMoneyOperatorTelecel:
-		return "VODAFONE_GHA"
-	case MobileMoneyOperatorAT:
-		return "AIRTELTIGO_GHA"
-	default:
+	rule, ok := paymentregistry.FindPawaPayMVPRule(country, currency, string(operator))
+	if !ok {
 		return ""
 	}
+	return rule.ProviderCode
 }
 
 func hasProviderOperatorOptions(options map[string]any) bool {
-	for _, key := range []string{"operator", "network", "provider", "channel", "moolre_channel"} {
+	for _, key := range []string{"operator", "network", "provider"} {
 		if strings.TrimSpace(fmt.Sprint(options[key])) != "" && fmt.Sprint(options[key]) != "<nil>" {
 			return true
 		}

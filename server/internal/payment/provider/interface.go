@@ -11,10 +11,6 @@ type ID string
 
 const (
 	ProviderPawaPay ID = "pawapay"
-
-	// ProviderMoolre is kept only so older generic routing code can compile while
-	// the MVP runtime registers PawaPay as the only payment aggregator.
-	ProviderMoolre ID = "moolre"
 )
 
 type PaymentMethod string
