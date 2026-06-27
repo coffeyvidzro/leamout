@@ -219,35 +219,26 @@ func metadataFromDeposit(resp *PawaDepositResponse) map[string]string {
 		addIfNotBlank(metadata, "failure_message", resp.FailureReason.FailureMessage)
 	}
 
-	if len(resp.Metadata) > 0 {
-		for _, item := range resp.Metadata {
-			if strings.TrimSpace(item.FieldName) == "" {
-				continue
-			}
-			metadata["meta_"+item.FieldName] = item.FieldValue
-		}
+	for key, value := range resp.Metadata {
+		addIfNotBlank(metadata, "meta_"+key, value)
 	}
 
 	return metadata
 }
 
-func metadataFrom(metadata map[string]string) []PawaMetadataField {
+func metadataFrom(metadata map[string]string) []PawaMetadata {
 	if len(metadata) == 0 {
 		return nil
 	}
 
-	out := make([]PawaMetadataField, 0, len(depositMetadataKeys))
+	out := make([]PawaMetadata, 0, len(depositMetadataKeys))
 	for _, key := range depositMetadataKeys {
 		value := strings.TrimSpace(metadata[key])
 		if value == "" {
 			continue
 		}
 
-		out = append(out, PawaMetadataField{
-			FieldName:  key,
-			FieldValue: value,
-			IsPII:      false,
-		})
+		out = append(out, PawaMetadata{key: value})
 	}
 
 	return out

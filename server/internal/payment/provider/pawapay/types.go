@@ -24,16 +24,16 @@ const (
 )
 
 type PawaDepositRequest struct {
-	DepositID            string              `json:"depositId"`
-	Payer                PawaParty           `json:"payer"`
-	Amount               string              `json:"amount"`
-	Currency             string              `json:"currency"`
-	ClientReferenceID    string              `json:"clientReferenceId,omitempty"`
-	CustomerMessage      string              `json:"customerMessage,omitempty"`
-	SuccessfulURL        string              `json:"successfulUrl,omitempty"`
-	FailedURL            string              `json:"failedUrl,omitempty"`
-	PreAuthorisationCode string              `json:"preAuthorisationCode,omitempty"`
-	Metadata             []PawaMetadataField `json:"metadata,omitempty"`
+	DepositID            string          `json:"depositId"`
+	Payer                PawaParty       `json:"payer"`
+	Amount               string          `json:"amount"`
+	Currency             string          `json:"currency"`
+	ClientReferenceID    string          `json:"clientReferenceId,omitempty"`
+	CustomerMessage      string          `json:"customerMessage,omitempty"`
+	SuccessfulURL        string          `json:"successfulUrl,omitempty"`
+	FailedURL            string          `json:"failedUrl,omitempty"`
+	PreAuthorisationCode string          `json:"preAuthorisationCode,omitempty"`
+	Metadata             []PawaMetadata `json:"metadata,omitempty"`
 }
 
 type PawaParty struct {
@@ -46,11 +46,7 @@ type PawaAccountDetails struct {
 	Provider    string `json:"provider,omitempty"`
 }
 
-type PawaMetadataField struct {
-	FieldName  string `json:"fieldName"`
-	FieldValue string `json:"fieldValue"`
-	IsPII      bool   `json:"isPII"`
-}
+type PawaMetadata map[string]any
 
 type PawaFailureReason struct {
 	FailureCode    string `json:"failureCode,omitempty"`
@@ -58,22 +54,22 @@ type PawaFailureReason struct {
 }
 
 type PawaDepositResponse struct {
-	DepositID             string              `json:"depositId"`
-	Status                string              `json:"status"`
-	NextStep              string              `json:"nextStep,omitempty"`
-	Amount                string              `json:"amount,omitempty"`
-	Currency              string              `json:"currency,omitempty"`
-	Country               string              `json:"country,omitempty"`
-	Payer                 *PawaParty          `json:"payer,omitempty"`
-	CustomerMessage       string              `json:"customerMessage,omitempty"`
-	ClientReferenceID     string              `json:"clientReferenceId,omitempty"`
-	SuccessfulURL         string              `json:"successfulUrl,omitempty"`
-	FailedURL             string              `json:"failedUrl,omitempty"`
-	AuthorizationURL      string              `json:"authorizationUrl,omitempty"`
-	Created               string              `json:"created,omitempty"`
-	ProviderTransactionID string              `json:"providerTransactionId,omitempty"`
-	FailureReason         *PawaFailureReason  `json:"failureReason,omitempty"`
-	Metadata              []PawaMetadataField `json:"metadata,omitempty"`
+	DepositID             string            `json:"depositId"`
+	Status                string            `json:"status"`
+	NextStep              string            `json:"nextStep,omitempty"`
+	Amount                string            `json:"amount,omitempty"`
+	Currency              string            `json:"currency,omitempty"`
+	Country               string            `json:"country,omitempty"`
+	Payer                 *PawaParty        `json:"payer,omitempty"`
+	CustomerMessage       string            `json:"customerMessage,omitempty"`
+	ClientReferenceID     string            `json:"clientReferenceId,omitempty"`
+	SuccessfulURL         string            `json:"successfulUrl,omitempty"`
+	FailedURL             string            `json:"failedUrl,omitempty"`
+	AuthorizationURL      string            `json:"authorizationUrl,omitempty"`
+	Created               string            `json:"created,omitempty"`
+	ProviderTransactionID string            `json:"providerTransactionId,omitempty"`
+	FailureReason         *PawaFailureReason `json:"failureReason,omitempty"`
+	Metadata              map[string]string `json:"metadata,omitempty"`
 }
 
 type PawaDepositStatusResponse struct {
