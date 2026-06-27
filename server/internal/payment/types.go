@@ -16,9 +16,6 @@ var (
 )
 
 // MobileMoneyOperator is Leamout's provider-neutral operator/network value.
-// The payment service maps this to PawaPay provider codes such as
-// MTN_MOMO_GHA, VODAFONE_GHA, or AIRTELTIGO_GHA.
-//
 // Keep frontend and database values provider-neutral. Do not expose PawaPay
 // provider codes to the checkout page.
 type MobileMoneyOperator string
@@ -148,7 +145,7 @@ func normalizeOperator(operator MobileMoneyOperator) MobileMoneyOperator {
 		return MobileMoneyOperatorMTN
 	case "telecel", "telecel_cash", "vodafone", "vodafone_cash":
 		return MobileMoneyOperatorTelecel
-	case "at", "airteltigo", "airtel_tigo", "at_money", "tigo":
+	case "at", "airteltigo", "airtel_tigo", "at_money":
 		return MobileMoneyOperatorAT
 	default:
 		return MobileMoneyOperator(raw)
