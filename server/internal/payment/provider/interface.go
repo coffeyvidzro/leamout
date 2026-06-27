@@ -117,7 +117,7 @@ type InitiatePaymentRequest struct {
 	//   pre_authorisation_code: abc
 	//   successful_url: https://...
 	//   failed_url: https://...
-	//   statement_description: Renewal payment
+	//   customer_message: Renewal payment
 	ProviderOptions map[string]any `json:"provider_options,omitempty"`
 }
 
@@ -157,6 +157,16 @@ type VerifyPaymentResponse struct {
 	Metadata         map[string]string `json:"metadata,omitempty"`
 }
 
+type PredictProviderRequest struct {
+	PhoneNumber string `json:"phone_number"`
+}
+
+type PredictProviderResponse struct {
+	Country     string `json:"country,omitempty"`
+	Provider    string `json:"provider,omitempty"`
+	PhoneNumber string `json:"phone_number,omitempty"`
+}
+
 type WebhookRequest struct {
 	Headers http.Header
 	Body    []byte
@@ -187,6 +197,12 @@ type Provider interface {
 	InitiatePayment(ctx context.Context, req InitiatePaymentRequest) (*InitiatePaymentResponse, error)
 	VerifyPayment(ctx context.Context, req VerifyPaymentRequest) (*VerifyPaymentResponse, error)
 	ParseWebhook(ctx context.Context, req WebhookRequest) (*WebhookEvent, error)
+}
+
+// ProviderPredictor is optional. PawaPay implements it through /v2/predict-provider
+// so checkout can detect the correct mobile money provider from a phone number.
+type ProviderPredictor interface {
+	PredictProvider(ctx context.Context, req PredictProviderRequest) (*PredictProviderResponse, error)
 }
 
 // WebhookVerifier is optional. Providers that support webhook signature checks
