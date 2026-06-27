@@ -22,6 +22,7 @@ const clientSecretBytes = 32
 var ErrInvalidPaymentRequest = errors.New("invalid checkout payment request")
 
 type PaymentStarter interface {
+	PredictCheckoutProvider(ctx context.Context, phoneNumber string) (*modulepayment.ProviderPrediction, error)
 	StartCheckoutPayment(ctx context.Context, params modulepayment.StartCheckoutPaymentParams) (*modulepayment.StartCheckoutPaymentResult, error)
 }
 
@@ -88,15 +89,31 @@ func (s *Service) Pay(ctx context.Context, clientSecret string, req PayRequest) 
 		return nil, err
 	}
 
-	quoteReq := QuoteRequest{Country: req.Country, Phone: req.Phone, Operator: req.Operator, Intelligence: req.Intelligence}
-	quote, err := s.quoteForSession(session, quoteReq)
+	predictionPhone := predictPhoneNumber(req.Country, req.Phone)
+	prediction, err := s.paymentService.PredictCheckoutProvider(ctx, predictionPhone)
+	if err != nil {
+		return nil, fmt.Errorf("%w: could not predict mobile money provider: %v", ErrInvalidPaymentRequest, err)
+	}
+	if prediction == nil || strings.TrimSpace(prediction.ProviderCode) == "" {
+		return nil, fmt.Errorf("%w: could not predict mobile money provider", ErrInvalidPaymentRequest)
+	}
+
+	marketRule, ok := paymentregistry.FindPawaPayMVPRuleByProviderCode(prediction.ProviderCode)
+	if !ok {
+		return nil, fmt.Errorf("%w: predicted provider %s is not available for this checkout", ErrInvalidPaymentRequest, prediction.ProviderCode)
+	}
+	if !countryMatches(req.Country, marketRule) {
+		return nil, fmt.Errorf("%w: phone number belongs to %s, not %s", ErrInvalidPaymentRequest, marketRule.CountryName, strings.ToUpper(strings.TrimSpace(req.Country)))
+	}
+
+	quote, err := s.quoteForRule(session, marketRule, req.Intelligence)
 	if err != nil {
 		return nil, err
 	}
 
-	marketRule, ok := paymentregistry.FindPawaPayMVPRule(quote.Country, quote.Currency, quote.Operator)
-	if !ok {
-		return nil, fmt.Errorf("%w: unsupported country/operator %s/%s/%s", ErrInvalidPaymentRequest, quote.Country, quote.Currency, quote.Operator)
+	phoneForPayment := strings.TrimSpace(prediction.PhoneNumber)
+	if phoneForPayment == "" {
+		phoneForPayment = strings.TrimPrefix(predictionPhone, "+")
 	}
 
 	metadata := map[string]string{"checkout_session_id": session.ID.String(), "user_id": session.UserID.String()}
@@ -107,6 +124,10 @@ func (s *Service) Pay(ctx context.Context, clientSecret string, req PayRequest) 
 	}
 	addQuoteMetadata(metadata, quote, req.Intelligence)
 	metadata["pawapay_provider"] = marketRule.ProviderCode
+	metadata["predicted_provider"] = prediction.ProviderCode
+	metadata["predicted_country"] = prediction.Country
+	metadata["predicted_phone_number"] = phoneForPayment
+	metadata["selected_operator"] = strings.TrimSpace(req.Operator)
 	metadata["decimal_mode"] = marketRule.DecimalMode
 	metadata["min_amount"] = strconv.FormatInt(marketRule.MinAmountMinor, 10)
 	metadata["max_amount"] = strconv.FormatInt(marketRule.MaxAmountMinor, 10)
@@ -119,7 +140,7 @@ func (s *Service) Pay(ctx context.Context, clientSecret string, req PayRequest) 
 		FeeAmount:       quote.ProcessingFee,
 		Currency:        quote.Currency,
 		Country:         quote.Country,
-		Phone:           req.Phone,
+		Phone:           phoneForPayment,
 		Operator:        quote.Operator,
 		CustomerName:    req.CustomerName,
 		CustomerEmail:   req.CustomerEmail,
@@ -143,16 +164,22 @@ func (s *Service) Confirm(ctx context.Context, clientSecret string) (*Session, e
 }
 
 func (s *Service) quoteForSession(session *Session, req QuoteRequest) (*QuoteResponse, error) {
+	marketRule, ok := paymentregistry.FindPawaPayMVPRule(req.Country, session.Currency, req.Operator)
+	if !ok {
+		return nil, fmt.Errorf("%w: unsupported country/operator %s/%s/%s", ErrInvalidPaymentRequest, req.Country, session.Currency, req.Operator)
+	}
+	return s.quoteForRule(session, marketRule, req.Intelligence)
+}
+
+func (s *Service) quoteForRule(session *Session, marketRule paymentregistry.PawaPayMarketRule, intelligence RequestIntelligence) (*QuoteResponse, error) {
 	if session == nil {
 		return nil, ErrNotFound
 	}
 	if s.pricingService == nil {
 		return nil, errors.New("payment pricing service is not configured")
 	}
-
-	marketRule, ok := paymentregistry.FindPawaPayMVPRule(req.Country, session.Currency, req.Operator)
-	if !ok {
-		return nil, fmt.Errorf("%w: unsupported country/operator %s/%s/%s", ErrInvalidPaymentRequest, req.Country, session.Currency, req.Operator)
+	if strings.ToUpper(strings.TrimSpace(session.Currency)) != marketRule.Currency {
+		return nil, fmt.Errorf("%w: checkout currency %s does not match predicted provider currency %s", ErrInvalidPaymentRequest, session.Currency, marketRule.Currency)
 	}
 	if !marketRule.FeeConfigured {
 		return nil, fmt.Errorf("%w: fee not configured for %s/%s/%s", ErrInvalidPaymentRequest, marketRule.Country, marketRule.Currency, marketRule.Operator)
@@ -161,18 +188,12 @@ func (s *Service) quoteForSession(session *Session, req QuoteRequest) (*QuoteRes
 		return nil, fmt.Errorf("%w: amount %d outside allowed range %d..%d for %s/%s/%s", ErrInvalidPaymentRequest, session.Amount, marketRule.MinAmountMinor, marketRule.MaxAmountMinor, marketRule.Country, marketRule.Currency, marketRule.Operator)
 	}
 
-	quote, err := s.pricingService.Quote(paymentpricing.Request{
-		BaseAmount: session.Amount,
-		Country:    marketRule.Country,
-		Currency:   marketRule.Currency,
-		Method:     marketRule.Method,
-		Operator:   marketRule.Operator,
-	})
+	quote, err := s.pricingService.Quote(paymentpricing.Request{BaseAmount: session.Amount, Country: marketRule.Country, Currency: marketRule.Currency, Method: marketRule.Method, Operator: marketRule.Operator})
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidPaymentRequest, err)
 	}
 
-	detectedCountry := strings.ToUpper(strings.TrimSpace(req.Intelligence.DetectedCountry))
+	detectedCountry := strings.ToUpper(strings.TrimSpace(intelligence.DetectedCountry))
 	countryMismatch := detectedCountry != "" && detectedCountry != quote.Country
 
 	return &QuoteResponse{CheckoutSessionID: session.ID.String(), Country: quote.Country, Currency: quote.Currency, Method: quote.Method, Operator: quote.Operator, BaseAmount: quote.BaseAmount, ProcessingFee: quote.ProcessingFee, PayableAmount: quote.PayableAmount, FeeRateBps: quote.FeeRateBps, FeeFixedAmount: quote.FeeFixedAmount, FeeMode: quote.FeeMode, DetectedCountry: detectedCountry, CountryMismatch: countryMismatch}, nil
@@ -247,6 +268,32 @@ func addQuoteMetadata(metadata map[string]string, quote *QuoteResponse, intellig
 	if quote.CountryMismatch {
 		metadata["country_mismatch"] = "true"
 	}
+}
+
+func predictPhoneNumber(country, phone string) string {
+	country = strings.ToUpper(strings.TrimSpace(country))
+	phone = strings.TrimSpace(phone)
+	if strings.HasPrefix(phone, "+") {
+		return phone
+	}
+	phone = strings.ReplaceAll(phone, " ", "")
+	phone = strings.ReplaceAll(phone, "-", "")
+	phone = strings.ReplaceAll(phone, "(", "")
+	phone = strings.ReplaceAll(phone, ")", "")
+	if country == "GH" || country == "GHA" {
+		if strings.HasPrefix(phone, "0") && len(phone) == 10 {
+			return "+233" + phone[1:]
+		}
+		if strings.HasPrefix(phone, "233") {
+			return "+" + phone
+		}
+	}
+	return phone
+}
+
+func countryMatches(selectedCountry string, marketRule paymentregistry.PawaPayMarketRule) bool {
+	selectedCountry = strings.ToUpper(strings.TrimSpace(selectedCountry))
+	return selectedCountry == "" || selectedCountry == marketRule.Country || selectedCountry == marketRule.CountryAlpha3
 }
 
 func rejectedPaymentMessage(result *modulepayment.StartCheckoutPaymentResult) string {
