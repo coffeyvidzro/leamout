@@ -99,6 +99,13 @@ func (s *Service) StartCheckoutPayment(ctx context.Context, params StartCheckout
 	return &StartCheckoutPaymentResult{PaymentID: paymentRecord.ID, CheckoutSessionID: params.CheckoutID, ExternalRef: result.ExternalRef, ProviderID: string(result.ProviderID), ProviderReference: result.ProviderReference, Status: status, AttemptStatus: AttemptStatus(result.Status), NextActionType: string(result.NextActionType), NextActionURL: result.NextActionURL, CustomerMessage: result.CustomerMessage}, nil
 }
 
+func (s *Service) Get(ctx context.Context, userID, id uuid.UUID) (*Payment, error) {
+	if userID == uuid.Nil || id == uuid.Nil {
+		return nil, ErrInvalidPayment
+	}
+	return s.repository.Get(ctx, userID, id)
+}
+
 func (s *Service) List(ctx context.Context, params ListParams) ([]Payment, error) {
 	return s.repository.List(ctx, params)
 }
