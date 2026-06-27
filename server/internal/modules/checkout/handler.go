@@ -81,16 +81,46 @@ func (h *Handler) GetPublic(c *gin.Context) {
 	respondCheckout(c, session, err)
 }
 
+func (h *Handler) Quote(c *gin.Context) {
+	var req QuoteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	req.Intelligence = requestIntelligence(c)
+
+	response, err := h.service.Quote(c.Request.Context(), c.Param("clientSecret"), req)
+	if errors.Is(err, ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "checkout session not found"})
+		return
+	}
+	if errors.Is(err, ErrInvalidPaymentRequest) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported payment method for this checkout"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to quote payment"})
+		return
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
 func (h *Handler) Pay(c *gin.Context) {
 	var req PayRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	req.Intelligence = requestIntelligence(c)
 
 	response, err := h.service.Pay(c.Request.Context(), c.Param("clientSecret"), req)
 	if errors.Is(err, ErrNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "checkout session not found"})
+		return
+	}
+	if errors.Is(err, ErrInvalidPaymentRequest) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported payment method for this checkout"})
 		return
 	}
 	if err != nil {
@@ -126,4 +156,13 @@ func respondCheckout(c *gin.Context, session *Session, err error) {
 	}
 
 	c.JSON(http.StatusOK, session)
+}
+
+func requestIntelligence(c *gin.Context) RequestIntelligence {
+	info := RequestIntelligence{ClientIP: c.ClientIP()}
+	if geo, ok := middleware.GetGeolocation(c); ok && geo != nil {
+		info.DetectedCountry = geo.CountryCode
+		info.DetectedSource = geo.Source
+	}
+	return info
 }
