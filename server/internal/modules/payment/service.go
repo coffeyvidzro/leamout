@@ -67,18 +67,17 @@ func (s *Service) StartCheckoutPayment(ctx context.Context, params StartCheckout
 	}
 
 	result, err := s.processor.InitiatePayment(ctx, paymentkernel.InitiatePaymentRequest{
-		UserID:            params.UserID.String(),
-		ExternalRef:       externalRef,
-		AmountMinor:       params.Amount,
-		Currency:          params.Currency,
-		Country:           params.Country,
-		Method:            provider.PaymentMethodMobileMoney,
-		Operator:          paymentkernel.MobileMoneyOperator(params.Operator),
-		PreferredProvider: provider.ID(params.PreferredProvider),
-		Description:       params.Label,
-		Customer: paymentkernel.Customer{Phone: params.Phone, Country: params.Country, Name: params.CustomerName, Email: params.CustomerEmail},
-		ReturnURL:         params.ReturnURL,
-		Metadata:          metadata,
+		UserID:      params.UserID.String(),
+		ExternalRef: externalRef,
+		AmountMinor: params.Amount,
+		Currency:    params.Currency,
+		Country:     params.Country,
+		Method:      provider.PaymentMethodMobileMoney,
+		Operator:    paymentkernel.MobileMoneyOperator(params.Operator),
+		Description: params.Label,
+		Customer:    paymentkernel.Customer{Phone: params.Phone, Country: params.Country, Name: params.CustomerName, Email: params.CustomerEmail},
+		ReturnURL:   params.ReturnURL,
+		Metadata:    metadata,
 	})
 	if err != nil {
 		return nil, err
