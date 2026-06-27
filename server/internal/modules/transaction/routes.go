@@ -7,4 +7,5 @@ func RegisterRoutes(router gin.IRouter, handler *Handler, authMiddleware gin.Han
 	transactions.Use(authMiddleware)
 
 	transactions.GET("", handler.List)
+	transactions.GET("/:id", handler.Get)
 }
