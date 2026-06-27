@@ -116,7 +116,6 @@ export default function CheckoutPage({ params }: CheckoutPageProps) {
           country: "GH",
           phone: normalizedPhone,
           operator,
-          preferred_provider: "moolre",
         }),
       });
 
