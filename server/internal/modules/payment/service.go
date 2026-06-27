@@ -51,12 +51,12 @@ func (s *Service) StartCheckoutPayment(ctx context.Context, params StartCheckout
 	if s.processor == nil {
 		return nil, errors.New("payment processor is not configured")
 	}
-	if params.UserID == uuid.Nil || params.CheckoutID == uuid.Nil || params.Amount <= 0 || strings.TrimSpace(params.Currency) == "" {
+	if params.UserID == uuid.Nil || params.CheckoutID == uuid.Nil || params.Amount <= 0 || strings.TrimSpace(params.Currency) == "" || strings.TrimSpace(params.Country) == "" {
 		return nil, ErrInvalidPayment
 	}
 
 	externalRef := uuid.NewString()
-	metadata := map[string]string{"checkout_session_id": params.CheckoutID.String(), "user_id": params.UserID.String()}
+	metadata := map[string]string{"checkout_session_id": params.CheckoutID.String(), "user_id": params.UserID.String(), "country": strings.ToUpper(strings.TrimSpace(params.Country)), "currency": strings.ToUpper(strings.TrimSpace(params.Currency))}
 	for key, value := range params.Metadata {
 		if _, exists := metadata[key]; !exists {
 			metadata[key] = value
@@ -150,7 +150,7 @@ func (s *Service) WebhookProcessed(ctx paymentkernel.Context, result *paymentker
 	}
 
 	if s.wallet != nil && transactionRecord != nil {
-		if err := s.wallet.CreditPaymentCapture(realCtx, wallet.CreditPaymentCaptureParams{UserID: paymentRecord.UserID, PaymentID: paymentRecord.ID, TransactionID: transactionRecord.ID, Currency: paymentRecord.Currency, Amount: paymentRecord.NetAmount, Metadata: paymentRecord.Metadata}); err != nil {
+		if err := s.wallet.CreditPaymentCapture(realCtx, wallet.CreditPaymentCaptureParams{UserID: paymentRecord.UserID, PaymentID: paymentRecord.ID, TransactionID: transactionRecord.ID, Country: metadataString(paymentRecord.Metadata, "country"), Currency: paymentRecord.Currency, Amount: paymentRecord.NetAmount, Metadata: paymentRecord.Metadata}); err != nil {
 			return err
 		}
 	}
@@ -172,6 +172,11 @@ func statusFromProvider(status provider.PaymentStatus) Status {
 	default:
 		return StatusPending
 	}
+}
+
+func metadataString(metadata map[string]any, key string) string {
+	value, _ := metadata[key].(string)
+	return strings.TrimSpace(value)
 }
 
 func contextFromPayment(ctx paymentkernel.Context) context.Context {
