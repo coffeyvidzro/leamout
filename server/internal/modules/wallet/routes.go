@@ -6,6 +6,6 @@ func RegisterRoutes(router gin.IRouter, handler *Handler, authMiddleware gin.Han
 	wallets := router.Group("/wallets")
 	wallets.Use(authMiddleware)
 
-	wallets.GET("/:currency", handler.Get)
-	wallets.GET("/:currency/ledger", handler.ListLedger)
+	wallets.GET("", handler.List)
+	wallets.GET("/ledger", handler.ListLedger)
 }
