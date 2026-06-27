@@ -123,6 +123,31 @@ func (p *PawapayProvider) VerifyPayment(ctx context.Context, req provider.Verify
 	return ToVerifyResponse(statusResp, depositID, raw), nil
 }
 
+func (p *PawapayProvider) PredictProvider(ctx context.Context, req provider.PredictProviderRequest) (*provider.PredictProviderResponse, error) {
+	if p.client == nil {
+		return nil, provider.ErrProviderInvalidAccount
+	}
+
+	phoneNumber := strings.TrimSpace(req.PhoneNumber)
+	if phoneNumber == "" {
+		return nil, fmt.Errorf("%w: phone_number is required", provider.ErrProviderInvalidRequest)
+	}
+
+	prediction, _, err := p.client.PredictProvider(ctx, phoneNumber)
+	if err != nil {
+		return nil, fmt.Errorf("pawapay predict provider failed: %w", err)
+	}
+	if prediction == nil {
+		return nil, fmt.Errorf("%w: pawapay returned nil provider prediction", provider.ErrProviderInvalidRequest)
+	}
+
+	return &provider.PredictProviderResponse{
+		Country:     strings.ToUpper(strings.TrimSpace(prediction.Country)),
+		Provider:    strings.ToUpper(strings.TrimSpace(prediction.Provider)),
+		PhoneNumber: strings.TrimSpace(prediction.PhoneNumber),
+	}, nil
+}
+
 func (p *PawapayProvider) ParseWebhook(ctx context.Context, req provider.WebhookRequest) (*provider.WebhookEvent, error) {
 	return ParseWebhook(ctx, req)
 }
@@ -148,3 +173,5 @@ func (p *PawapayProvider) validateRequest(req provider.InitiatePaymentRequest) e
 
 	return nil
 }
+
+var _ provider.ProviderPredictor = (*PawapayProvider)(nil)
