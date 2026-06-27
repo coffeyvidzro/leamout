@@ -163,11 +163,56 @@ func envMap(environ []string) map[string]string {
 	return out
 }
 
+func normalizeProviderIDs(ids []provider.ID) []provider.ID {
+	out := make([]provider.ID, 0, len(ids))
+	for _, id := range ids {
+		id = normalizeProviderID(string(id))
+		if id == "" {
+			continue
+		}
+		out = append(out, id)
+	}
+	return dedupeProviderIDs(out)
+}
+
+func dedupeProviderIDs(ids []provider.ID) []provider.ID {
+	seen := map[provider.ID]struct{}{}
+	out := make([]provider.ID, 0, len(ids))
+	for _, id := range ids {
+		id = normalizeProviderID(string(id))
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+func normalizeProviderID(raw string) provider.ID {
+	return provider.ID(strings.ToLower(strings.TrimSpace(raw)))
+}
+
+func normalizeCountry(raw string) string {
+	return strings.ToUpper(strings.TrimSpace(raw))
+}
+
+func normalizeCurrency(raw string) string {
+	return strings.ToUpper(strings.TrimSpace(raw))
+}
+
+func normalizeMethod(method provider.PaymentMethod) provider.PaymentMethod {
+	return provider.PaymentMethod(strings.ToLower(strings.TrimSpace(string(method))))
+}
+
 func parseBoolDefault(raw string, fallback bool) bool {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "true", "1", "yes", "y":
+	case "true", "1", "yes", "y", "on":
 		return true
-	case "false", "0", "no", "n":
+	case "false", "0", "no", "n", "off":
 		return false
 	default:
 		return fallback
