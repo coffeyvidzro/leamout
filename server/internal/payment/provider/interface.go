@@ -188,3 +188,9 @@ type Provider interface {
 	VerifyPayment(ctx context.Context, req VerifyPaymentRequest) (*VerifyPaymentResponse, error)
 	ParseWebhook(ctx context.Context, req WebhookRequest) (*WebhookEvent, error)
 }
+
+// WebhookVerifier is optional. Providers that support webhook signature checks
+// can implement it, and the generic webhook handler will call it before parsing.
+type WebhookVerifier interface {
+	VerifyWebhookSignature(ctx context.Context, req WebhookRequest) error
+}
