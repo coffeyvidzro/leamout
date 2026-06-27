@@ -22,7 +22,22 @@ type CheckoutPageProps = {
   }>;
 };
 
+type CheckoutCountry = "GH";
+
 type MobileMoneyOperator = "mtn" | "telecel" | "at";
+
+type OperatorOption = {
+  value: MobileMoneyOperator;
+  label: string;
+};
+
+type CountryOption = {
+  value: CheckoutCountry;
+  label: string;
+  callingCode: string;
+  phonePlaceholder: string;
+  operators: OperatorOption[];
+};
 
 type PayResponse = {
   checkout_session_id: string;
@@ -35,11 +50,19 @@ type PayResponse = {
   customer_message?: string;
 };
 
-const operatorLabels: Record<MobileMoneyOperator, string> = {
-  mtn: "MTN MoMo",
-  telecel: "Telecel Cash",
-  at: "AT Money",
-};
+const countryOptions: CountryOption[] = [
+  {
+    value: "GH",
+    label: "Ghana",
+    callingCode: "+233",
+    phonePlaceholder: "024 123 4567",
+    operators: [
+      { value: "mtn", label: "MTN MoMo" },
+      { value: "telecel", label: "Telecel Cash" },
+      { value: "at", label: "AT Money" },
+    ],
+  },
+];
 
 function formatMoney(amount?: number, currency = "GHS") {
   return new Intl.NumberFormat("en-GH", {
@@ -52,10 +75,18 @@ function readableStatus(status: string) {
   return status.replaceAll("_", " ");
 }
 
+function countryOptionFor(country: CheckoutCountry) {
+  return (
+    countryOptions.find((option) => option.value === country) ??
+    countryOptions[0]
+  );
+}
+
 export default function CheckoutPage({ params }: CheckoutPageProps) {
   const { clientSecret } = use(params);
 
   const [session, setSession] = useState<CheckoutSession | null>(null);
+  const [country, setCountry] = useState<CheckoutCountry>("GH");
   const [phone, setPhone] = useState("");
   const [operator, setOperator] = useState<MobileMoneyOperator>("mtn");
   const [payment, setPayment] = useState<PayResponse | null>(null);
@@ -63,6 +94,8 @@ export default function CheckoutPage({ params }: CheckoutPageProps) {
   const [paying, setPaying] = useState(false);
   const [awaitingApproval, setAwaitingApproval] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const selectedCountry = countryOptionFor(country);
 
   const loadCheckout = useCallback(async () => {
     try {
@@ -96,6 +129,13 @@ export default function CheckoutPage({ params }: CheckoutPageProps) {
     return () => window.clearInterval(timer);
   }, [awaitingApproval, loadCheckout, session?.status]);
 
+  function changeCountry(nextCountry: CheckoutCountry) {
+    const nextCountryOption = countryOptionFor(nextCountry);
+
+    setCountry(nextCountry);
+    setOperator(nextCountryOption.operators[0].value);
+  }
+
   async function sendPaymentPrompt(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -113,7 +153,7 @@ export default function CheckoutPage({ params }: CheckoutPageProps) {
       const data = await apiFetch<PayResponse>(`/checkout/${clientSecret}/pay`, {
         method: "POST",
         body: JSON.stringify({
-          country: "GH",
+          country,
           phone: normalizedPhone,
           operator,
         }),
@@ -124,7 +164,7 @@ export default function CheckoutPage({ params }: CheckoutPageProps) {
       await loadCheckout();
     } catch {
       setError(
-        "We could not send the payment prompt. Check the number and try again.",
+        "We could not send the payment prompt. Check the country, network, and number, then try again.",
       );
     } finally {
       setPaying(false);
@@ -231,13 +271,32 @@ export default function CheckoutPage({ params }: CheckoutPageProps) {
           {isOpen ? (
             <form className="space-y-4" onSubmit={sendPaymentPrompt}>
               <div className="space-y-2">
+                <Label htmlFor="country">Country</Label>
+                <select
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={paying || awaitingApproval}
+                  id="country"
+                  onChange={(event) =>
+                    changeCountry(event.target.value as CheckoutCountry)
+                  }
+                  value={country}
+                >
+                  {countryOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label} ({option.callingCode})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="phone">Mobile Money number</Label>
                 <Input
                   autoComplete="tel"
                   id="phone"
                   inputMode="tel"
                   onChange={(event) => setPhone(event.target.value)}
-                  placeholder="024 123 4567"
+                  placeholder={selectedCountry.phonePlaceholder}
                   required
                   value={phone}
                 />
@@ -254,13 +313,18 @@ export default function CheckoutPage({ params }: CheckoutPageProps) {
                   }
                   value={operator}
                 >
-                  {Object.entries(operatorLabels).map(([value, name]) => (
-                    <option key={value} value={value}>
-                      {name}
+                  {selectedCountry.operators.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
                     </option>
                   ))}
                 </select>
               </div>
+
+              <p className="text-muted-foreground text-xs">
+                Leamout will choose the best available payment route for the
+                selected country and network.
+              </p>
 
               {payment ? (
                 <div className="rounded-md border bg-muted/50 p-3 text-sm">
@@ -269,7 +333,7 @@ export default function CheckoutPage({ params }: CheckoutPageProps) {
                     Check your phone and approve the Mobile Money prompt.
                   </p>
                   <p className="mt-2 text-muted-foreground capitalize">
-                    Provider status: {readableStatus(payment.status)}
+                    Payment status: {readableStatus(payment.status)}
                   </p>
                 </div>
               ) : null}
