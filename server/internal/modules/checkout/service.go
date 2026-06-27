@@ -13,6 +13,7 @@ import (
 
 	modulepayment "github.com/cuffeyvidzro/leamout/internal/modules/payment"
 	paymentpricing "github.com/cuffeyvidzro/leamout/internal/payment/pricing"
+	paymentregistry "github.com/cuffeyvidzro/leamout/internal/payment/registry"
 	"github.com/google/uuid"
 )
 
@@ -36,7 +37,7 @@ type Service struct {
 }
 
 func NewService(repository *Repository, paymentService PaymentStarter, webhookURLFor func(provider string) string) *Service {
-	return &Service{repository: repository, paymentService: paymentService, pricingService: paymentpricing.NewDefaultService(), webhookURLFor: webhookURLFor}
+	return &Service{repository: repository, paymentService: paymentService, pricingService: paymentpricing.NewService(paymentregistry.PawaPayMVPFeeRules()), webhookURLFor: webhookURLFor}
 }
 
 func (s *Service) Create(ctx context.Context, userID uuid.UUID, req CreateRequest) (*Session, error) {
@@ -93,6 +94,11 @@ func (s *Service) Pay(ctx context.Context, clientSecret string, req PayRequest) 
 		return nil, err
 	}
 
+	marketRule, ok := paymentregistry.FindPawaPayMVPRule(quote.Country, quote.Currency, quote.Operator)
+	if !ok {
+		return nil, fmt.Errorf("%w: unsupported country/operator %s/%s/%s", ErrInvalidPaymentRequest, quote.Country, quote.Currency, quote.Operator)
+	}
+
 	metadata := map[string]string{"checkout_session_id": session.ID.String(), "user_id": session.UserID.String()}
 	for key, value := range stringMetadata(session.Metadata) {
 		if _, exists := metadata[key]; !exists {
@@ -100,22 +106,27 @@ func (s *Service) Pay(ctx context.Context, clientSecret string, req PayRequest) 
 		}
 	}
 	addQuoteMetadata(metadata, quote, req.Intelligence)
+	metadata["pawapay_provider"] = marketRule.ProviderCode
+	metadata["decimal_mode"] = marketRule.DecimalMode
+	metadata["min_amount"] = strconv.FormatInt(marketRule.MinAmountMinor, 10)
+	metadata["max_amount"] = strconv.FormatInt(marketRule.MaxAmountMinor, 10)
 
 	result, err := s.paymentService.StartCheckoutPayment(ctx, modulepayment.StartCheckoutPaymentParams{
-		CheckoutID:    session.ID,
-		UserID:        session.UserID,
-		CustomerID:    session.CustomerID,
-		Amount:        quote.PayableAmount,
-		FeeAmount:     quote.ProcessingFee,
-		Currency:      quote.Currency,
-		Country:       quote.Country,
-		Phone:         req.Phone,
-		Operator:      quote.Operator,
-		CustomerName:  req.CustomerName,
-		CustomerEmail: req.CustomerEmail,
-		Label:         labelOrDefault(session.Label),
-		ReturnURL:     returnURL(session),
-		Metadata:      metadata,
+		CheckoutID:      session.ID,
+		UserID:          session.UserID,
+		CustomerID:      session.CustomerID,
+		Amount:          quote.PayableAmount,
+		FeeAmount:       quote.ProcessingFee,
+		Currency:        quote.Currency,
+		Country:         quote.Country,
+		Phone:           req.Phone,
+		Operator:        quote.Operator,
+		CustomerName:    req.CustomerName,
+		CustomerEmail:   req.CustomerEmail,
+		Label:           labelOrDefault(session.Label),
+		ReturnURL:       returnURL(session),
+		Metadata:        metadata,
+		ProviderOptions: map[string]any{"provider": marketRule.ProviderCode},
 	})
 	if err != nil {
 		return nil, err
@@ -136,12 +147,23 @@ func (s *Service) quoteForSession(session *Session, req QuoteRequest) (*QuoteRes
 		return nil, errors.New("payment pricing service is not configured")
 	}
 
+	marketRule, ok := paymentregistry.FindPawaPayMVPRule(req.Country, session.Currency, req.Operator)
+	if !ok {
+		return nil, fmt.Errorf("%w: unsupported country/operator %s/%s/%s", ErrInvalidPaymentRequest, req.Country, session.Currency, req.Operator)
+	}
+	if !marketRule.FeeConfigured {
+		return nil, fmt.Errorf("%w: fee not configured for %s/%s/%s", ErrInvalidPaymentRequest, marketRule.Country, marketRule.Currency, marketRule.Operator)
+	}
+	if !marketRule.ValidateAmount(session.Amount) {
+		return nil, fmt.Errorf("%w: amount %d outside allowed range %d..%d for %s/%s/%s", ErrInvalidPaymentRequest, session.Amount, marketRule.MinAmountMinor, marketRule.MaxAmountMinor, marketRule.Country, marketRule.Currency, marketRule.Operator)
+	}
+
 	quote, err := s.pricingService.Quote(paymentpricing.Request{
 		BaseAmount: session.Amount,
-		Country:    req.Country,
-		Currency:   session.Currency,
-		Method:     paymentpricing.MethodMobileMoney,
-		Operator:   req.Operator,
+		Country:    marketRule.Country,
+		Currency:   marketRule.Currency,
+		Method:     marketRule.Method,
+		Operator:   marketRule.Operator,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidPaymentRequest, err)
