@@ -116,12 +116,7 @@ func (s *Service) Pay(ctx context.Context, clientSecret string, req PayRequest) 
 		phoneForPayment = strings.TrimPrefix(predictionPhone, "+")
 	}
 
-	metadata := map[string]string{"checkout_session_id": session.ID.String(), "user_id": session.UserID.String()}
-	for key, value := range stringMetadata(session.Metadata) {
-		if _, exists := metadata[key]; !exists {
-			metadata[key] = value
-		}
-	}
+	metadata := stringMetadata(session.Metadata)
 	addQuoteMetadata(metadata, quote, req.Intelligence)
 	metadata["pawapay_provider"] = marketRule.ProviderCode
 	metadata["predicted_provider"] = prediction.ProviderCode
@@ -280,15 +275,32 @@ func predictPhoneNumber(country, phone string) string {
 	phone = strings.ReplaceAll(phone, "-", "")
 	phone = strings.ReplaceAll(phone, "(", "")
 	phone = strings.ReplaceAll(phone, ")", "")
-	if country == "GH" || country == "GHA" {
-		if strings.HasPrefix(phone, "0") && len(phone) == 10 {
-			return "+233" + phone[1:]
-		}
-		if strings.HasPrefix(phone, "233") {
+	phone = strings.TrimPrefix(phone, "+")
+	if phone == "" {
+		return ""
+	}
+	if strings.HasPrefix(phone, "00") && len(phone) > 2 {
+		phone = phone[2:]
+	}
+	if prefix := phonePrefixForCountry(country); prefix != "" {
+		if phone == prefix || strings.HasPrefix(phone, prefix) {
 			return "+" + phone
+		}
+		if strings.HasPrefix(phone, "0") && len(phone) > 1 {
+			return "+" + prefix + phone[1:]
 		}
 	}
 	return phone
+}
+
+func phonePrefixForCountry(country string) string {
+	country = strings.ToUpper(strings.TrimSpace(country))
+	for _, rule := range paymentregistry.PawaPayMVPRules() {
+		if rule.Country == country || rule.CountryAlpha3 == country {
+			return strings.TrimSpace(rule.PhonePrefix)
+		}
+	}
+	return ""
 }
 
 func countryMatches(selectedCountry string, marketRule paymentregistry.PawaPayMarketRule) bool {
