@@ -9,6 +9,8 @@ type Country struct {
 	Name             string   `json:"name"`
 	CallingCode      string   `json:"calling_code"`
 	DefaultCurrency  string   `json:"default_currency"`
+	Currencies       []string `json:"currencies"`
+	Status           string   `json:"status"`
 	SupportedMethods []Method `json:"supported_methods"`
 }
 
@@ -26,4 +28,5 @@ type ListParams struct {
 	Country  string
 	Currency string
 	Method   string
+	Status   string
 }
