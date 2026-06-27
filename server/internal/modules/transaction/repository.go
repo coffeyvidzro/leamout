@@ -3,6 +3,7 @@ package transaction
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -11,6 +12,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+var ErrNotFound = errors.New("transaction not found")
 
 type Repository struct {
 	db *pgxpool.Pool
@@ -44,6 +47,22 @@ RETURNING id, user_id, payment_id, checkout_id, external_id, type, status, curre
 		return nil, fmt.Errorf("create transaction: %w", err)
 	}
 	return tx, nil
+}
+
+func (r *Repository) Get(ctx context.Context, userID, id uuid.UUID) (*Transaction, error) {
+	const query = `
+SELECT id, user_id, payment_id, checkout_id, external_id, type, status, currency, amount, occurred_at, metadata, created_at
+FROM transactions
+WHERE user_id = $1 AND id = $2`
+
+	item, err := scanTransaction(r.db.QueryRow(ctx, query, userID, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get transaction: %w", err)
+	}
+	return item, nil
 }
 
 func (r *Repository) List(ctx context.Context, params ListParams) ([]Transaction, error) {
@@ -109,5 +128,3 @@ func encodeMetadata(value map[string]any) ([]byte, error) {
 	}
 	return json.Marshal(value)
 }
-
-var _ = uuid.Nil
