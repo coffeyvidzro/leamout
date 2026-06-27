@@ -44,7 +44,7 @@ func ParseWebhook(_ context.Context, req provider.WebhookRequest) (*provider.Web
 		ExternalRef:       raw.DepositID,
 		ProviderReference: providerReference,
 		Verified:          false,
-		Payload:           req.Body,
+		RawPayload:        req.Body,
 		Metadata:          metadata,
 	}, nil
 }
