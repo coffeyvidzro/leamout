@@ -32,8 +32,8 @@ func (r *Repository) Create(ctx context.Context, params CreateParams) (*Payment,
 	}
 
 	const query = `
-INSERT INTO payments (user_id, checkout_id, customer_id, external_id, provider, status, currency, amount, metadata)
-VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6, $7, $8, $9)
+INSERT INTO payments (user_id, checkout_id, customer_id, external_id, provider, status, currency, amount, fee_amount, metadata)
+VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6, $7, $8, $9, $10)
 RETURNING id, user_id, checkout_id, customer_id, external_id, provider, provider_reference, status,
 	currency, amount, fee_amount, net_amount, metadata, created_at, updated_at`
 
@@ -46,6 +46,7 @@ RETURNING id, user_id, checkout_id, customer_id, external_id, provider, provider
 		params.Status,
 		strings.ToUpper(strings.TrimSpace(params.Currency)),
 		params.Amount,
+		params.FeeAmount,
 		metadata,
 	))
 	if err != nil {
