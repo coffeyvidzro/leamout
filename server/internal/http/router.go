@@ -17,6 +17,7 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/modules/subscription"
 	"github.com/cuffeyvidzro/leamout/internal/modules/transaction"
 	"github.com/cuffeyvidzro/leamout/internal/modules/user"
+	"github.com/cuffeyvidzro/leamout/internal/modules/wallet"
 	"github.com/gin-gonic/gin"
 )
 
@@ -50,10 +51,12 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 	creditsRepo := credits.NewRepository(s.pgPool)
 	dunningRepo := dunning.NewRepository(s.pgPool)
 	transactionRepo := transaction.NewRepository(s.pgPool)
+	walletRepo := wallet.NewRepository(s.pgPool)
 	paymentRepo := modulepayment.NewRepository(s.pgPool)
 
 	transactionService := transaction.NewService(transactionRepo)
-	paymentService := modulepayment.NewService(paymentRepo, nil, transactionService, checkoutRepo)
+	walletService := wallet.NewService(walletRepo)
+	paymentService := modulepayment.NewService(paymentRepo, nil, transactionService, walletService, checkoutRepo)
 	paymentKernelService, paymentWebhookHandler, err := s.paymentStack(paymentService)
 	if err != nil {
 		return nil, err
@@ -83,6 +86,7 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 	dunningHandler := dunning.NewHandler(dunningService, s.cfg.FrontendBaseURL)
 	paymentHandler := modulepayment.NewHandler(paymentService)
 	transactionHandler := transaction.NewHandler(transactionService)
+	walletHandler := wallet.NewHandler(walletService)
 
 	sessionAuthMiddleware := middleware.SessionAuthMiddleware(sessionService)
 	authMiddleware := middleware.AuthMiddleware(sessionService, patService)
@@ -101,6 +105,7 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 		dunning.RegisterRoutes(v1, dunningHandler, authMiddleware)
 		modulepayment.RegisterRoutes(v1, paymentHandler, authMiddleware)
 		transaction.RegisterRoutes(v1, transactionHandler, authMiddleware)
+		wallet.RegisterRoutes(v1, walletHandler, authMiddleware)
 	}
 
 	paymentWebhookHandler.RegisterRoutes(router.Group("/webhooks/payments"))

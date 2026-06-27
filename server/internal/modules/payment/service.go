@@ -9,6 +9,7 @@ import (
 	paymentkernel "github.com/cuffeyvidzro/leamout/internal/payment"
 	"github.com/cuffeyvidzro/leamout/internal/payment/provider"
 	"github.com/cuffeyvidzro/leamout/internal/modules/transaction"
+	"github.com/cuffeyvidzro/leamout/internal/modules/wallet"
 	"github.com/google/uuid"
 )
 
@@ -22,6 +23,10 @@ type TransactionCreator interface {
 	Create(ctx context.Context, params transaction.CreateParams) (*transaction.Transaction, error)
 }
 
+type WalletCreditor interface {
+	CreditPaymentCapture(ctx context.Context, params wallet.CreditPaymentCaptureParams) error
+}
+
 type CheckoutCompleter interface {
 	CompletePaidCheckout(ctx context.Context, checkoutID uuid.UUID) error
 }
@@ -30,11 +35,12 @@ type Service struct {
 	repository        *Repository
 	processor         Processor
 	transactions      TransactionCreator
+	wallet            WalletCreditor
 	checkoutCompleter CheckoutCompleter
 }
 
-func NewService(repository *Repository, processor Processor, transactions TransactionCreator, checkoutCompleter CheckoutCompleter) *Service {
-	return &Service{repository: repository, processor: processor, transactions: transactions, checkoutCompleter: checkoutCompleter}
+func NewService(repository *Repository, processor Processor, transactions TransactionCreator, wallet WalletCreditor, checkoutCompleter CheckoutCompleter) *Service {
+	return &Service{repository: repository, processor: processor, transactions: transactions, wallet: wallet, checkoutCompleter: checkoutCompleter}
 }
 
 func (s *Service) SetProcessor(processor Processor) {
@@ -45,12 +51,12 @@ func (s *Service) StartCheckoutPayment(ctx context.Context, params StartCheckout
 	if s.processor == nil {
 		return nil, errors.New("payment processor is not configured")
 	}
-	if params.UserID == uuid.Nil || params.CheckoutID == uuid.Nil || params.Amount <= 0 || strings.TrimSpace(params.Currency) == "" {
+	if params.UserID == uuid.Nil || params.CheckoutID == uuid.Nil || params.Amount <= 0 || strings.TrimSpace(params.Currency) == "" || strings.TrimSpace(params.Country) == "" {
 		return nil, ErrInvalidPayment
 	}
 
 	externalRef := uuid.NewString()
-	metadata := map[string]string{"checkout_session_id": params.CheckoutID.String(), "user_id": params.UserID.String()}
+	metadata := map[string]string{"checkout_session_id": params.CheckoutID.String(), "user_id": params.UserID.String(), "country": strings.ToUpper(strings.TrimSpace(params.Country)), "currency": strings.ToUpper(strings.TrimSpace(params.Currency))}
 	for key, value := range params.Metadata {
 		if _, exists := metadata[key]; !exists {
 			metadata[key] = value
@@ -122,22 +128,35 @@ func (s *Service) WebhookProcessed(ctx paymentkernel.Context, result *paymentker
 		metadata = stringMapToAny(result.Verification.Metadata)
 	}
 
-	paymentRecord, err := s.repository.UpdateFromProvider(contextFromPayment(ctx), UpdateFromProviderParams{ExternalID: result.ExternalRef, Provider: string(result.ProviderID), ProviderReference: result.ProviderReference, Status: statusFromProvider(result.Status), Metadata: metadata})
+	realCtx := contextFromPayment(ctx)
+	paymentRecord, err := s.repository.UpdateFromProvider(realCtx, UpdateFromProviderParams{ExternalID: result.ExternalRef, Provider: string(result.ProviderID), ProviderReference: result.ProviderReference, Status: statusFromProvider(result.Status), Metadata: metadata})
 	if err != nil {
 		return err
 	}
 	if paymentRecord.Status != StatusCaptured {
 		return nil
 	}
+
+	var transactionRecord *transaction.Transaction
 	if s.transactions != nil {
 		externalID := result.ProviderReference
 		if strings.TrimSpace(externalID) == "" {
 			externalID = result.ExternalRef
 		}
-		_, _ = s.transactions.Create(contextFromPayment(ctx), transaction.CreateParams{UserID: paymentRecord.UserID, PaymentID: &paymentRecord.ID, CheckoutID: paymentRecord.CheckoutID, ExternalID: externalID, Type: transaction.TypeCapture, Status: transaction.StatusSucceeded, Currency: paymentRecord.Currency, Amount: paymentRecord.Amount, OccurredAt: time.Now().UTC(), Metadata: paymentRecord.Metadata})
+		transactionRecord, err = s.transactions.Create(realCtx, transaction.CreateParams{UserID: paymentRecord.UserID, PaymentID: &paymentRecord.ID, CheckoutID: paymentRecord.CheckoutID, ExternalID: externalID, Type: transaction.TypeCapture, Status: transaction.StatusSucceeded, Currency: paymentRecord.Currency, Amount: paymentRecord.NetAmount, OccurredAt: time.Now().UTC(), Metadata: paymentRecord.Metadata})
+		if err != nil {
+			return err
+		}
 	}
+
+	if s.wallet != nil && transactionRecord != nil {
+		if err := s.wallet.CreditPaymentCapture(realCtx, wallet.CreditPaymentCaptureParams{UserID: paymentRecord.UserID, PaymentID: paymentRecord.ID, TransactionID: transactionRecord.ID, Country: metadataString(paymentRecord.Metadata, "country"), Currency: paymentRecord.Currency, Amount: paymentRecord.NetAmount, Metadata: paymentRecord.Metadata}); err != nil {
+			return err
+		}
+	}
+
 	if s.checkoutCompleter != nil && paymentRecord.CheckoutID != nil {
-		return s.checkoutCompleter.CompletePaidCheckout(contextFromPayment(ctx), *paymentRecord.CheckoutID)
+		return s.checkoutCompleter.CompletePaidCheckout(realCtx, *paymentRecord.CheckoutID)
 	}
 	return nil
 }
@@ -153,6 +172,11 @@ func statusFromProvider(status provider.PaymentStatus) Status {
 	default:
 		return StatusPending
 	}
+}
+
+func metadataString(metadata map[string]any, key string) string {
+	value, _ := metadata[key].(string)
+	return strings.TrimSpace(value)
 }
 
 func contextFromPayment(ctx paymentkernel.Context) context.Context {
