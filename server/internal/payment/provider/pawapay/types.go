@@ -30,7 +30,6 @@ type PawaDepositRequest struct {
 	Currency             string              `json:"currency"`
 	ClientReferenceID    string              `json:"clientReferenceId,omitempty"`
 	CustomerMessage      string              `json:"customerMessage,omitempty"`
-	StatementDescription string              `json:"statementDescription,omitempty"`
 	SuccessfulURL        string              `json:"successfulUrl,omitempty"`
 	FailedURL            string              `json:"failedUrl,omitempty"`
 	PreAuthorisationCode string              `json:"preAuthorisationCode,omitempty"`
@@ -67,7 +66,6 @@ type PawaDepositResponse struct {
 	Country               string              `json:"country,omitempty"`
 	Payer                 *PawaParty          `json:"payer,omitempty"`
 	CustomerMessage       string              `json:"customerMessage,omitempty"`
-	StatementDescription  string              `json:"statementDescription,omitempty"`
 	ClientReferenceID     string              `json:"clientReferenceId,omitempty"`
 	SuccessfulURL         string              `json:"successfulUrl,omitempty"`
 	FailedURL             string              `json:"failedUrl,omitempty"`
