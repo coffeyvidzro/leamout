@@ -59,7 +59,6 @@ func FromInternal(req provider.InitiatePaymentRequest) (*PawaDepositRequest, err
 		Currency:             strings.ToUpper(strings.TrimSpace(req.Currency)),
 		ClientReferenceID:    req.ExternalRef,
 		CustomerMessage:      customerMessage(req),
-		StatementDescription: statementDescription(req),
 		SuccessfulURL:        successfulURL,
 		FailedURL:            failedURL,
 		PreAuthorisationCode: stringOption(req.ProviderOptions, "pre_authorisation_code"),
@@ -326,13 +325,6 @@ func stringOption(options map[string]any, key string) string {
 
 func customerMessage(req provider.InitiatePaymentRequest) string {
 	if v := stringOption(req.ProviderOptions, "customer_message"); v != "" {
-		return v
-	}
-	return req.Description
-}
-
-func statementDescription(req provider.InitiatePaymentRequest) string {
-	if v := stringOption(req.ProviderOptions, "statement_description"); v != "" {
 		return v
 	}
 	return req.Description
