@@ -117,7 +117,7 @@ type QuoteResponse struct {
 type PayRequest struct {
 	Country       string              `json:"country" binding:"required"`
 	Phone         string              `json:"phone" binding:"required"`
-	Operator      string              `json:"operator" binding:"required"`
+	Operator      string              `json:"operator" binding:"omitempty"`
 	CustomerName  string              `json:"customer_name" binding:"omitempty,max=160"`
 	CustomerEmail string              `json:"customer_email" binding:"omitempty,email"`
 	Intelligence  RequestIntelligence `json:"-"`
