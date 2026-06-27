@@ -2,6 +2,7 @@ package checkout
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/cuffeyvidzro/leamout/internal/http/middleware"
@@ -99,6 +100,7 @@ func (h *Handler) Quote(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.ErrorContext(c.Request.Context(), "checkout quote failed", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to quote payment"})
 		return
 	}
@@ -124,6 +126,7 @@ func (h *Handler) Pay(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.ErrorContext(c.Request.Context(), "checkout payment failed", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to start payment"})
 		return
 	}
