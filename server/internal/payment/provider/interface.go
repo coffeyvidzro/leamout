@@ -163,6 +163,12 @@ type WebhookRequest struct {
 	Path    string
 }
 
+// WebhookVerifier is an optional interface for providers that support
+// validating webhook signatures before parsing callback payloads.
+type WebhookVerifier interface {
+	VerifyWebhookSignature(ctx context.Context, req WebhookRequest) error
+}
+
 type WebhookEvent struct {
 	ProviderID ID `json:"provider_id"`
 
