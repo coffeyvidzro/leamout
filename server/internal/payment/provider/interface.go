@@ -10,8 +10,11 @@ import (
 type ID string
 
 const (
-	ProviderMoolre  ID = "moolre"
 	ProviderPawaPay ID = "pawapay"
+
+	// ProviderMoolre is kept only so older generic routing code can compile while
+	// the MVP runtime registers PawaPay as the only payment aggregator.
+	ProviderMoolre ID = "moolre"
 )
 
 type PaymentMethod string
@@ -58,8 +61,7 @@ type Capabilities struct {
 	Currencies []string
 	Methods    []PaymentMethod
 
-	// Direct API collection, for example PawaPay POST /v2/deposits
-	// or Moolre's direct collection endpoint.
+	// Direct API collection, for example PawaPay POST /v2/deposits.
 	SupportsDirectCollection bool
 
 	// Provider may return a URL as a next action in some markets.
@@ -84,7 +86,6 @@ type InitiatePaymentRequest struct {
 
 	// Leamout-generated unique payment attempt reference.
 	// For PawaPay this maps to depositId.
-	// For Moolre this can map to externalref.
 	ExternalRef string `json:"external_ref"`
 
 	// AmountMinor is the smallest currency unit:
@@ -126,8 +127,7 @@ type InitiatePaymentResponse struct {
 	ExternalRef       string `json:"external_ref"`
 	ProviderReference string `json:"provider_reference,omitempty"`
 
-	Status PaymentStatus `json:"status"`
-
+	Status         PaymentStatus  `json:"status"`
 	NextActionType NextActionType `json:"next_action_type"`
 	NextActionURL  string         `json:"next_action_url,omitempty"`
 
@@ -151,8 +151,7 @@ type VerifyPaymentResponse struct {
 	Status      PaymentStatus `json:"status"`
 	AmountMinor int64         `json:"amount_minor,omitempty"`
 	Currency    string        `json:"currency,omitempty"`
-
-	PaidAt *time.Time `json:"paid_at,omitempty"`
+	PaidAt      *time.Time    `json:"paid_at,omitempty"`
 
 	ProviderResponse []byte            `json:"provider_response,omitempty"`
 	Metadata         map[string]string `json:"metadata,omitempty"`
@@ -161,36 +160,31 @@ type VerifyPaymentResponse struct {
 type WebhookRequest struct {
 	Headers http.Header
 	Body    []byte
+	Path    string
 }
 
 type WebhookEvent struct {
 	ProviderID ID `json:"provider_id"`
 
-	EventType string        `json:"event_type"`
-	Status    PaymentStatus `json:"status"`
+	EventID   string `json:"event_id,omitempty"`
+	EventType string `json:"event_type"`
 
 	ExternalRef       string `json:"external_ref,omitempty"`
 	ProviderReference string `json:"provider_reference,omitempty"`
 
-	// True only if the adapter actually verified a provider signature.
+	Status PaymentStatus `json:"status"`
+
 	Verified bool `json:"verified"`
 
-	Payload  []byte            `json:"payload"`
-	Metadata map[string]string `json:"metadata,omitempty"`
+	RawPayload []byte            `json:"raw_payload,omitempty"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
 }
 
 type Provider interface {
 	ID() ID
 	Name() string
 	Capabilities() Capabilities
-
-	InitiatePayment(ctx context.Context, request InitiatePaymentRequest) (*InitiatePaymentResponse, error)
-	VerifyPayment(ctx context.Context, request VerifyPaymentRequest) (*VerifyPaymentResponse, error)
-	ParseWebhook(ctx context.Context, request WebhookRequest) (*WebhookEvent, error)
-}
-
-// Optional interface. Implement only when you actually verify the provider's
-// documented callback signature. Do not fake success.
-type WebhookVerifier interface {
-	VerifyWebhookSignature(ctx context.Context, request WebhookRequest) error
+	InitiatePayment(ctx context.Context, req InitiatePaymentRequest) (*InitiatePaymentResponse, error)
+	VerifyPayment(ctx context.Context, req VerifyPaymentRequest) (*VerifyPaymentResponse, error)
+	ParseWebhook(ctx context.Context, req WebhookRequest) (*WebhookEvent, error)
 }

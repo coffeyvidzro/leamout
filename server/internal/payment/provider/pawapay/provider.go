@@ -8,6 +8,39 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/payment/provider"
 )
 
+var supportedCountryCurrencies = map[string]string{
+	"BJ":  "XOF",
+	"BEN": "XOF",
+	"BF":  "XOF",
+	"BFA": "XOF",
+	"CI":  "XOF",
+	"CIV": "XOF",
+	"CM":  "XAF",
+	"CMR": "XAF",
+	"CD":  "CDF",
+	"COD": "CDF",
+	"CG":  "XAF",
+	"COG": "XAF",
+	"GA":  "XAF",
+	"GAB": "XAF",
+	"GH":  "GHS",
+	"GHA": "GHS",
+	"MZ":  "MZN",
+	"MOZ": "MZN",
+	"MW":  "MWK",
+	"MWI": "MWK",
+	"RW":  "RWF",
+	"RWA": "RWF",
+	"SN":  "XOF",
+	"SEN": "XOF",
+	"SL":  "SLE",
+	"SLE": "SLE",
+	"TZ":  "TZS",
+	"TZA": "TZS",
+	"UG":  "UGX",
+	"UGA": "UGX",
+}
+
 type PawapayProvider struct {
 	client *Client
 }
@@ -26,15 +59,13 @@ func (p *PawapayProvider) Name() string {
 
 func (p *PawapayProvider) Capabilities() provider.Capabilities {
 	return provider.Capabilities{
-		// Leamout MVP: Ghana mobile money collections.
-		// Use active-conf later to discover the exact enabled providers
-		// on the merchant account.
-		Countries:  []string{"GH", "GHA"},
-		Currencies: []string{"GHS"},
+		// Leamout MVP uses PawaPay as the only aggregator. Kenya and Zambia are
+		// intentionally excluded until tiered fee rules are implemented.
+		Countries:  []string{"BJ", "BEN", "BF", "BFA", "CI", "CIV", "CM", "CMR", "CD", "COD", "CG", "COG", "GA", "GAB", "GH", "GHA", "MZ", "MOZ", "MW", "MWI", "RW", "RWA", "SN", "SEN", "SL", "SLE", "TZ", "TZA", "UG", "UGA"},
+		Currencies: []string{"CDF", "GHS", "MWK", "MZN", "RWF", "SLE", "TZS", "UGX", "XAF", "XOF"},
 		Methods: []provider.PaymentMethod{
 			provider.PaymentMethodMobileMoney,
 		},
-
 		SupportsDirectCollection: true,
 		SupportsRedirectAction:   true,
 		SupportsWebhook:          true,
@@ -99,14 +130,17 @@ func (p *PawapayProvider) ParseWebhook(ctx context.Context, req provider.Webhook
 }
 
 func (p *PawapayProvider) validateRequest(req provider.InitiatePaymentRequest) error {
-	if strings.TrimSpace(req.Country) != "" {
-		country := strings.ToUpper(strings.TrimSpace(req.Country))
-		if country != "GH" && country != "GHA" {
-			return provider.ErrProviderUnsupportedCountry
-		}
+	country := strings.ToUpper(strings.TrimSpace(req.Country))
+	expectedCurrency, ok := supportedCountryCurrencies[country]
+	if country != "" && !ok {
+		return provider.ErrProviderUnsupportedCountry
 	}
 
-	if strings.ToUpper(strings.TrimSpace(req.Currency)) != "GHS" {
+	currency := strings.ToUpper(strings.TrimSpace(req.Currency))
+	if currency == "" {
+		return provider.ErrProviderUnsupportedCurrency
+	}
+	if expectedCurrency != "" && currency != expectedCurrency {
 		return provider.ErrProviderUnsupportedCurrency
 	}
 

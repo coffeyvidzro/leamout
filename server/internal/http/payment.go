@@ -3,7 +3,6 @@ package http
 import (
 	"github.com/cuffeyvidzro/leamout/internal/payment"
 	"github.com/cuffeyvidzro/leamout/internal/payment/provider"
-	"github.com/cuffeyvidzro/leamout/internal/payment/provider/moolre"
 	"github.com/cuffeyvidzro/leamout/internal/payment/provider/pawapay"
 	"github.com/cuffeyvidzro/leamout/internal/payment/routing"
 	paywebhook "github.com/cuffeyvidzro/leamout/internal/payment/webhook"
@@ -11,13 +10,6 @@ import (
 
 func (s *Server) paymentProviders() []provider.Provider {
 	return []provider.Provider{
-		moolre.NewProviderFromConfig(moolre.Config{
-			BaseURL:       s.cfg.Moolre.BaseURL,
-			APIUser:       s.cfg.Moolre.APIUser,
-			APIKey:        s.cfg.Moolre.APIKey,
-			APIPubKey:     s.cfg.Moolre.APIPubKey,
-			AccountNumber: s.cfg.Moolre.AccountNumber,
-		}),
 		pawapay.NewPawapayProvider(
 			pawapay.NewClient(s.cfg.PawaPay),
 		),

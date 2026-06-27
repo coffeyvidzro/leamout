@@ -58,20 +58,20 @@ type Attempt struct {
 }
 
 type StartCheckoutPaymentParams struct {
-	CheckoutID        uuid.UUID
-	UserID            uuid.UUID
-	CustomerID        *uuid.UUID
-	Amount            int64
-	Currency          string
-	Country           string
-	Phone             string
-	Operator          string
-	CustomerName      string
-	CustomerEmail     string
-	PreferredProvider string
-	Label             string
-	ReturnURL         string
-	Metadata          map[string]string
+	CheckoutID    uuid.UUID
+	UserID        uuid.UUID
+	CustomerID    *uuid.UUID
+	Amount        int64
+	FeeAmount     int64
+	Currency      string
+	Country       string
+	Phone         string
+	Operator      string
+	CustomerName  string
+	CustomerEmail string
+	Label         string
+	ReturnURL     string
+	Metadata      map[string]string
 }
 
 type StartCheckoutPaymentResult struct {
@@ -96,6 +96,7 @@ type CreateParams struct {
 	Status     Status
 	Currency   string
 	Amount     int64
+	FeeAmount  int64
 	Metadata   map[string]any
 }
 

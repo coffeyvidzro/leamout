@@ -85,24 +85,54 @@ type UpdateRequest struct {
 	CanceledAt *time.Time     `json:"canceled_at,omitempty"`
 }
 
+type RequestIntelligence struct {
+	DetectedCountry string `json:"-"`
+	DetectedSource  string `json:"-"`
+	ClientIP        string `json:"-"`
+}
+
+type QuoteRequest struct {
+	Country      string              `json:"country" binding:"required"`
+	Phone        string              `json:"phone" binding:"required"`
+	Operator     string              `json:"operator" binding:"required"`
+	Intelligence RequestIntelligence `json:"-"`
+}
+
+type QuoteResponse struct {
+	CheckoutSessionID string `json:"checkout_session_id"`
+	Country           string `json:"country"`
+	Currency          string `json:"currency"`
+	Method            string `json:"method"`
+	Operator          string `json:"operator"`
+	BaseAmount        int64  `json:"base_amount"`
+	ProcessingFee     int64  `json:"processing_fee"`
+	PayableAmount     int64  `json:"payable_amount"`
+	FeeRateBps        int64  `json:"fee_rate_bps"`
+	FeeFixedAmount    int64  `json:"fee_fixed_amount"`
+	FeeMode           string `json:"fee_mode"`
+	DetectedCountry   string `json:"detected_country,omitempty"`
+	CountryMismatch   bool   `json:"country_mismatch,omitempty"`
+}
+
 type PayRequest struct {
-	Country           string `json:"country" binding:"required"`
-	Phone             string `json:"phone" binding:"required"`
-	Operator          string `json:"operator" binding:"required,oneof=mtn telecel at"`
-	CustomerName      string `json:"customer_name" binding:"omitempty,max=160"`
-	CustomerEmail     string `json:"customer_email" binding:"omitempty,email"`
-	PreferredProvider string `json:"preferred_provider" binding:"omitempty,oneof=moolre pawapay"`
+	Country       string              `json:"country" binding:"required"`
+	Phone         string              `json:"phone" binding:"required"`
+	Operator      string              `json:"operator" binding:"required"`
+	CustomerName  string              `json:"customer_name" binding:"omitempty,max=160"`
+	CustomerEmail string              `json:"customer_email" binding:"omitempty,email"`
+	Intelligence  RequestIntelligence `json:"-"`
 }
 
 type PayResponse struct {
-	CheckoutSessionID string `json:"checkout_session_id"`
-	ExternalRef       string `json:"external_ref"`
-	ProviderID        string `json:"provider_id"`
-	ProviderReference string `json:"provider_reference,omitempty"`
-	Status            string `json:"status"`
-	NextActionType    string `json:"next_action_type"`
-	NextActionURL     string `json:"next_action_url,omitempty"`
-	CustomerMessage   string `json:"customer_message,omitempty"`
+	CheckoutSessionID string         `json:"checkout_session_id"`
+	ExternalRef       string         `json:"external_ref"`
+	ProviderID        string         `json:"provider_id"`
+	ProviderReference string         `json:"provider_reference,omitempty"`
+	Status            string         `json:"status"`
+	NextActionType    string         `json:"next_action_type"`
+	NextActionURL     string         `json:"next_action_url,omitempty"`
+	CustomerMessage   string         `json:"customer_message,omitempty"`
+	Quote             *QuoteResponse `json:"quote,omitempty"`
 }
 
 type CreatePaymentAttemptParams struct {

@@ -8,26 +8,35 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	modulepayment "github.com/cuffeyvidzro/leamout/internal/modules/payment"
+	paymentpricing "github.com/cuffeyvidzro/leamout/internal/payment/pricing"
 	"github.com/google/uuid"
 )
 
 const clientSecretBytes = 32
 
+var ErrInvalidPaymentRequest = errors.New("invalid checkout payment request")
+
 type PaymentStarter interface {
 	StartCheckoutPayment(ctx context.Context, params modulepayment.StartCheckoutPaymentParams) (*modulepayment.StartCheckoutPaymentResult, error)
+}
+
+type PricingQuoter interface {
+	Quote(req paymentpricing.Request) (*paymentpricing.Quote, error)
 }
 
 type Service struct {
 	repository     *Repository
 	paymentService PaymentStarter
+	pricingService PricingQuoter
 	webhookURLFor  func(provider string) string
 }
 
 func NewService(repository *Repository, paymentService PaymentStarter, webhookURLFor func(provider string) string) *Service {
-	return &Service{repository: repository, paymentService: paymentService, webhookURLFor: webhookURLFor}
+	return &Service{repository: repository, paymentService: paymentService, pricingService: paymentpricing.NewDefaultService(), webhookURLFor: webhookURLFor}
 }
 
 func (s *Service) Create(ctx context.Context, userID uuid.UUID, req CreateRequest) (*Session, error) {
@@ -41,7 +50,6 @@ func (s *Service) Create(ctx context.Context, userID uuid.UUID, req CreateReques
 		return nil, err
 	}
 	session.ClientSecret = clientSecret
-
 	return session, nil
 }
 
@@ -61,6 +69,14 @@ func (s *Service) Update(ctx context.Context, userID, id uuid.UUID, req UpdateRe
 	return s.repository.Update(ctx, userID, id, req)
 }
 
+func (s *Service) Quote(ctx context.Context, clientSecret string, req QuoteRequest) (*QuoteResponse, error) {
+	session, err := s.GetPublic(ctx, clientSecret)
+	if err != nil {
+		return nil, err
+	}
+	return s.quoteForSession(session, req)
+}
+
 func (s *Service) Pay(ctx context.Context, clientSecret string, req PayRequest) (*PayResponse, error) {
 	if s.paymentService == nil {
 		return nil, errors.New("payment service is not configured")
@@ -71,38 +87,70 @@ func (s *Service) Pay(ctx context.Context, clientSecret string, req PayRequest) 
 		return nil, err
 	}
 
+	quoteReq := QuoteRequest{Country: req.Country, Phone: req.Phone, Operator: req.Operator, Intelligence: req.Intelligence}
+	quote, err := s.quoteForSession(session, quoteReq)
+	if err != nil {
+		return nil, err
+	}
+
 	metadata := map[string]string{"checkout_session_id": session.ID.String(), "user_id": session.UserID.String()}
 	for key, value := range stringMetadata(session.Metadata) {
 		if _, exists := metadata[key]; !exists {
 			metadata[key] = value
 		}
 	}
+	addQuoteMetadata(metadata, quote, req.Intelligence)
 
 	result, err := s.paymentService.StartCheckoutPayment(ctx, modulepayment.StartCheckoutPaymentParams{
-		CheckoutID:        session.ID,
-		UserID:            session.UserID,
-		CustomerID:        session.CustomerID,
-		Amount:            session.Amount,
-		Currency:          session.Currency,
-		Country:           req.Country,
-		Phone:             req.Phone,
-		Operator:          req.Operator,
-		CustomerName:      req.CustomerName,
-		CustomerEmail:     req.CustomerEmail,
-		PreferredProvider: req.PreferredProvider,
-		Label:             labelOrDefault(session.Label),
-		ReturnURL:         returnURL(session),
-		Metadata:          metadata,
+		CheckoutID:    session.ID,
+		UserID:        session.UserID,
+		CustomerID:    session.CustomerID,
+		Amount:        quote.PayableAmount,
+		FeeAmount:     quote.ProcessingFee,
+		Currency:      quote.Currency,
+		Country:       quote.Country,
+		Phone:         req.Phone,
+		Operator:      quote.Operator,
+		CustomerName:  req.CustomerName,
+		CustomerEmail: req.CustomerEmail,
+		Label:         labelOrDefault(session.Label),
+		ReturnURL:     returnURL(session),
+		Metadata:      metadata,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	return &PayResponse{CheckoutSessionID: session.ID.String(), ExternalRef: result.ExternalRef, ProviderID: result.ProviderID, ProviderReference: result.ProviderReference, Status: string(result.Status), NextActionType: result.NextActionType, NextActionURL: result.NextActionURL, CustomerMessage: result.CustomerMessage}, nil
+	return &PayResponse{CheckoutSessionID: session.ID.String(), ExternalRef: result.ExternalRef, ProviderID: result.ProviderID, ProviderReference: result.ProviderReference, Status: string(result.Status), NextActionType: result.NextActionType, NextActionURL: result.NextActionURL, CustomerMessage: result.CustomerMessage, Quote: quote}, nil
 }
 
 func (s *Service) Confirm(ctx context.Context, clientSecret string) (*Session, error) {
 	return s.repository.ConfirmByClientSecretHash(ctx, HashClientSecret(clientSecret))
+}
+
+func (s *Service) quoteForSession(session *Session, req QuoteRequest) (*QuoteResponse, error) {
+	if session == nil {
+		return nil, ErrNotFound
+	}
+	if s.pricingService == nil {
+		return nil, errors.New("payment pricing service is not configured")
+	}
+
+	quote, err := s.pricingService.Quote(paymentpricing.Request{
+		BaseAmount: session.Amount,
+		Country:    req.Country,
+		Currency:   session.Currency,
+		Method:     paymentpricing.MethodMobileMoney,
+		Operator:   req.Operator,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidPaymentRequest, err)
+	}
+
+	detectedCountry := strings.ToUpper(strings.TrimSpace(req.Intelligence.DetectedCountry))
+	countryMismatch := detectedCountry != "" && detectedCountry != quote.Country
+
+	return &QuoteResponse{CheckoutSessionID: session.ID.String(), Country: quote.Country, Currency: quote.Currency, Method: quote.Method, Operator: quote.Operator, BaseAmount: quote.BaseAmount, ProcessingFee: quote.ProcessingFee, PayableAmount: quote.PayableAmount, FeeRateBps: quote.FeeRateBps, FeeFixedAmount: quote.FeeFixedAmount, FeeMode: quote.FeeMode, DetectedCountry: detectedCountry, CountryMismatch: countryMismatch}, nil
 }
 
 func HashClientSecret(clientSecret string) string {
@@ -115,7 +163,6 @@ func newClientSecret() (string, error) {
 	if _, err := rand.Read(bytes); err != nil {
 		return "", err
 	}
-
 	return base64.RawURLEncoding.EncodeToString(bytes), nil
 }
 
@@ -149,4 +196,30 @@ func stringMetadata(metadata map[string]any) map[string]string {
 		out[key] = strings.TrimSpace(fmt.Sprint(value))
 	}
 	return out
+}
+
+func addQuoteMetadata(metadata map[string]string, quote *QuoteResponse, intelligence RequestIntelligence) {
+	if metadata == nil || quote == nil {
+		return
+	}
+	metadata["base_amount"] = strconv.FormatInt(quote.BaseAmount, 10)
+	metadata["processing_fee"] = strconv.FormatInt(quote.ProcessingFee, 10)
+	metadata["payable_amount"] = strconv.FormatInt(quote.PayableAmount, 10)
+	metadata["fee_rate_bps"] = strconv.FormatInt(quote.FeeRateBps, 10)
+	metadata["fee_fixed_amount"] = strconv.FormatInt(quote.FeeFixedAmount, 10)
+	metadata["fee_mode"] = quote.FeeMode
+	metadata["payment_method"] = quote.Method
+	metadata["operator"] = quote.Operator
+	if strings.TrimSpace(intelligence.DetectedCountry) != "" {
+		metadata["detected_country"] = strings.ToUpper(strings.TrimSpace(intelligence.DetectedCountry))
+	}
+	if strings.TrimSpace(intelligence.DetectedSource) != "" {
+		metadata["detected_country_source"] = strings.TrimSpace(intelligence.DetectedSource)
+	}
+	if strings.TrimSpace(intelligence.ClientIP) != "" {
+		metadata["client_ip"] = strings.TrimSpace(intelligence.ClientIP)
+	}
+	if quote.CountryMismatch {
+		metadata["country_mismatch"] = "true"
+	}
 }

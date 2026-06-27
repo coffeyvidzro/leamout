@@ -54,6 +54,9 @@ func (s *Service) StartCheckoutPayment(ctx context.Context, params StartCheckout
 	if params.UserID == uuid.Nil || params.CheckoutID == uuid.Nil || params.Amount <= 0 || strings.TrimSpace(params.Currency) == "" || strings.TrimSpace(params.Country) == "" {
 		return nil, ErrInvalidPayment
 	}
+	if params.FeeAmount < 0 || params.FeeAmount > params.Amount {
+		return nil, ErrInvalidPayment
+	}
 
 	externalRef := uuid.NewString()
 	metadata := map[string]string{"checkout_session_id": params.CheckoutID.String(), "user_id": params.UserID.String(), "country": strings.ToUpper(strings.TrimSpace(params.Country)), "currency": strings.ToUpper(strings.TrimSpace(params.Currency))}
@@ -64,18 +67,17 @@ func (s *Service) StartCheckoutPayment(ctx context.Context, params StartCheckout
 	}
 
 	result, err := s.processor.InitiatePayment(ctx, paymentkernel.InitiatePaymentRequest{
-		UserID:            params.UserID.String(),
-		ExternalRef:       externalRef,
-		AmountMinor:       params.Amount,
-		Currency:          params.Currency,
-		Country:           params.Country,
-		Method:            provider.PaymentMethodMobileMoney,
-		Operator:          paymentkernel.MobileMoneyOperator(params.Operator),
-		PreferredProvider: provider.ID(params.PreferredProvider),
-		Description:       params.Label,
-		Customer: paymentkernel.Customer{Phone: params.Phone, Country: params.Country, Name: params.CustomerName, Email: params.CustomerEmail},
-		ReturnURL:         params.ReturnURL,
-		Metadata:          metadata,
+		UserID:      params.UserID.String(),
+		ExternalRef: externalRef,
+		AmountMinor: params.Amount,
+		Currency:    params.Currency,
+		Country:     params.Country,
+		Method:      provider.PaymentMethodMobileMoney,
+		Operator:    paymentkernel.MobileMoneyOperator(params.Operator),
+		Description: params.Label,
+		Customer:    paymentkernel.Customer{Phone: params.Phone, Country: params.Country, Name: params.CustomerName, Email: params.CustomerEmail},
+		ReturnURL:   params.ReturnURL,
+		Metadata:    metadata,
 	})
 	if err != nil {
 		return nil, err
@@ -92,6 +94,7 @@ func (s *Service) StartCheckoutPayment(ctx context.Context, params StartCheckout
 		Status:     status,
 		Currency:   params.Currency,
 		Amount:     params.Amount,
+		FeeAmount:  params.FeeAmount,
 		Metadata:   stringMapToAny(metadata),
 	})
 	if err != nil {
