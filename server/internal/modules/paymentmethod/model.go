@@ -7,9 +7,8 @@ type CatalogResponse struct {
 type Country struct {
 	Code             string   `json:"code"`
 	Name             string   `json:"name"`
-	CallingCode      string   `json:"calling_code"`
-	DefaultCurrency  string   `json:"default_currency"`
-	Currencies       []string `json:"currencies"`
+	Prefix           string   `json:"prefix"`
+	Currency         string   `json:"currency"`
 	Status           string   `json:"status"`
 	SupportedMethods []Method `json:"supported_methods"`
 }
