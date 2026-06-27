@@ -2,19 +2,19 @@ package registry
 
 import "testing"
 
-func TestPawaPayMVPRulesExcludeTieredMarkets(t *testing.T) {
+func TestPawaPayMVPRulesExcludeDeferredMarkets(t *testing.T) {
 	for _, rule := range PawaPayMVPRules() {
 		switch rule.Country {
-		case "KE", "ZM":
-			t.Fatalf("tiered market %s should not be in MVP registry", rule.Country)
+		case "KE", "MZ", "ZM":
+			t.Fatalf("deferred market %s should not be in MVP registry", rule.Country)
 		}
 		switch rule.CountryAlpha3 {
-		case "KEN", "ZMB":
-			t.Fatalf("tiered market %s should not be in MVP registry", rule.CountryAlpha3)
+		case "KEN", "MOZ", "ZMB":
+			t.Fatalf("deferred market %s should not be in MVP registry", rule.CountryAlpha3)
 		}
 		switch rule.Currency {
-		case "KES", "ZMW":
-			t.Fatalf("tiered currency %s should not be in MVP registry", rule.Currency)
+		case "KES", "MZN", "ZMW":
+			t.Fatalf("deferred currency %s should not be in MVP registry", rule.Currency)
 		}
 	}
 }
@@ -47,19 +47,18 @@ func TestFindPawaPayMVPRuleByProviderCode(t *testing.T) {
 	}
 }
 
-func TestPawaPayMVPFeeRulesSkipUnconfiguredMarkets(t *testing.T) {
-	for _, rule := range PawaPayMVPFeeRules() {
-		if rule.Country == "MZ" {
-			t.Fatal("Mozambique should be present as a market but skipped from fee rules until fee is confirmed")
-		}
+func TestPawaPayMVPFeeRulesAreConfigured(t *testing.T) {
+	marketRules := PawaPayMVPRules()
+	feeRules := PawaPayMVPFeeRules()
+
+	if len(feeRules) != len(marketRules) {
+		t.Fatalf("fee rule count = %d, want %d", len(feeRules), len(marketRules))
 	}
 
-	mz, ok := FindPawaPayMVPRule("MOZ", "MZN", "vodacom")
-	if !ok {
-		t.Fatal("expected Mozambique market rule")
-	}
-	if mz.FeeConfigured {
-		t.Fatal("Mozambique fee should not be configured until confirmed")
+	for _, rule := range marketRules {
+		if !rule.FeeConfigured {
+			t.Fatalf("market %s/%s/%s should have a configured MVP fee", rule.Country, rule.Currency, rule.Operator)
+		}
 	}
 }
 
