@@ -92,11 +92,10 @@ type RequestIntelligence struct {
 }
 
 type QuoteRequest struct {
-	Country           string              `json:"country" binding:"required"`
-	Phone             string              `json:"phone" binding:"required"`
-	Operator          string              `json:"operator" binding:"required"`
-	PreferredProvider string              `json:"preferred_provider" binding:"omitempty,oneof=moolre pawapay"`
-	Intelligence      RequestIntelligence `json:"-"`
+	Country      string              `json:"country" binding:"required"`
+	Phone        string              `json:"phone" binding:"required"`
+	Operator     string              `json:"operator" binding:"required"`
+	Intelligence RequestIntelligence `json:"-"`
 }
 
 type QuoteResponse struct {
@@ -116,13 +115,12 @@ type QuoteResponse struct {
 }
 
 type PayRequest struct {
-	Country           string              `json:"country" binding:"required"`
-	Phone             string              `json:"phone" binding:"required"`
-	Operator          string              `json:"operator" binding:"required"`
-	CustomerName      string              `json:"customer_name" binding:"omitempty,max=160"`
-	CustomerEmail     string              `json:"customer_email" binding:"omitempty,email"`
-	PreferredProvider string              `json:"preferred_provider" binding:"omitempty,oneof=moolre pawapay"`
-	Intelligence      RequestIntelligence `json:"-"`
+	Country       string              `json:"country" binding:"required"`
+	Phone         string              `json:"phone" binding:"required"`
+	Operator      string              `json:"operator" binding:"required"`
+	CustomerName  string              `json:"customer_name" binding:"omitempty,max=160"`
+	CustomerEmail string              `json:"customer_email" binding:"omitempty,email"`
+	Intelligence  RequestIntelligence `json:"-"`
 }
 
 type PayResponse struct {
