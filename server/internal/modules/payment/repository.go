@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -80,6 +81,23 @@ RETURNING id, user_id, checkout_id, customer_id, external_id, provider, provider
 	}
 	if err != nil {
 		return nil, fmt.Errorf("update payment from provider: %w", err)
+	}
+	return item, nil
+}
+
+func (r *Repository) Get(ctx context.Context, userID, id uuid.UUID) (*Payment, error) {
+	const query = `
+SELECT id, user_id, checkout_id, customer_id, external_id, provider, provider_reference, status,
+	currency, amount, fee_amount, net_amount, metadata, created_at, updated_at
+FROM payments
+WHERE user_id = $1 AND id = $2`
+
+	item, err := scanPayment(r.db.QueryRow(ctx, query, userID, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get payment: %w", err)
 	}
 	return item, nil
 }
