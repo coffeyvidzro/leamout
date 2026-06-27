@@ -10,10 +10,12 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/modules/credits"
 	"github.com/cuffeyvidzro/leamout/internal/modules/customer"
 	"github.com/cuffeyvidzro/leamout/internal/modules/dunning"
+	modulepayment "github.com/cuffeyvidzro/leamout/internal/modules/payment"
 	"github.com/cuffeyvidzro/leamout/internal/modules/pat"
 	"github.com/cuffeyvidzro/leamout/internal/modules/product"
 	"github.com/cuffeyvidzro/leamout/internal/modules/session"
 	"github.com/cuffeyvidzro/leamout/internal/modules/subscription"
+	"github.com/cuffeyvidzro/leamout/internal/modules/transaction"
 	"github.com/cuffeyvidzro/leamout/internal/modules/user"
 	"github.com/gin-gonic/gin"
 )
@@ -29,7 +31,6 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 		return nil, err
 	}
 
-	// Global Middleware
 	router.Use(gin.Recovery())
 	router.Use(middleware.RequestContext())
 	router.Use(middleware.RequestLogger(s.log))
@@ -37,8 +38,6 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 	router.Use(middleware.Secure(s.cfg.IsDevelopment()))
 	router.Use(middleware.CORS(s.cfg.CORSOrigins, s.cfg.IsDevelopment()))
 	router.Use(middleware.Geolocation(s.geolocator, s.log))
-
-	// Initialize Repositories
 
 	userRepo := user.NewRepository(s.pgPool)
 	sessionRepo := session.NewRepository(s.pgPool, s.redis)
@@ -50,20 +49,28 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 	subscriptionRepo := subscription.NewRepository(s.pgPool)
 	creditsRepo := credits.NewRepository(s.pgPool)
 	dunningRepo := dunning.NewRepository(s.pgPool)
+	transactionRepo := transaction.NewRepository(s.pgPool)
+	paymentRepo := modulepayment.NewRepository(s.pgPool)
 
-	//  Initialize Services
+	transactionService := transaction.NewService(transactionRepo)
+	paymentService := modulepayment.NewService(paymentRepo, nil, transactionService, checkoutRepo)
+	paymentKernelService, paymentWebhookHandler, err := s.paymentStack(paymentService)
+	if err != nil {
+		return nil, err
+	}
+	paymentService.SetProcessor(paymentKernelService)
+
 	userService := user.NewService(userRepo)
 	sessionService := session.NewService(sessionRepo)
 	authService := auth.NewService(authRepo, s.oauthRegistry(), sessionService)
 	customerService := customer.NewService(customerRepo)
 	productService := product.NewService(productRepo)
-	checkoutService := checkout.NewService(checkoutRepo)
+	checkoutService := checkout.NewService(checkoutRepo, paymentService, s.cfg.PaymentWebhookURL)
 	patService := pat.NewService(patRepo)
 	subscriptionService := subscription.NewService(subscriptionRepo)
 	creditsService := credits.NewService(creditsRepo)
 	dunningService := dunning.NewService(dunningRepo, checkoutService)
 
-	// Initialize Handlers
 	userHandler := user.NewHandler(userService)
 	sessionHandler := session.NewHandler(sessionService)
 	authHandler := auth.NewHandler(authService, s.cfg.IsDevelopment())
@@ -74,12 +81,12 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 	subscriptionHandler := subscription.NewHandler(subscriptionService)
 	creditsHandler := credits.NewHandler(creditsService)
 	dunningHandler := dunning.NewHandler(dunningService, s.cfg.FrontendBaseURL)
+	paymentHandler := modulepayment.NewHandler(paymentService)
+	transactionHandler := transaction.NewHandler(transactionService)
 
-	//  Initialize Middleware
 	sessionAuthMiddleware := middleware.SessionAuthMiddleware(sessionService)
 	authMiddleware := middleware.AuthMiddleware(sessionService, patService)
 
-	// Register Routes
 	v1 := router.Group("/v1")
 	{
 		auth.RegisterRoutes(v1, authHandler, sessionAuthMiddleware)
@@ -92,13 +99,14 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 		checkout.RegisterRoutes(v1, checkoutHandler, authMiddleware)
 		credits.RegisterRoutes(v1, creditsHandler, authMiddleware)
 		dunning.RegisterRoutes(v1, dunningHandler, authMiddleware)
+		modulepayment.RegisterRoutes(v1, paymentHandler, authMiddleware)
+		transaction.RegisterRoutes(v1, transactionHandler, authMiddleware)
 	}
 
+	paymentWebhookHandler.RegisterRoutes(router.Group("/webhooks/payments"))
+
 	router.GET("/health", func(c *gin.Context) {
-		c.JSON(nethttp.StatusOK, gin.H{
-			"status":    "ok",
-			"timestamp": time.Now().Format(time.RFC3339),
-		})
+		c.JSON(nethttp.StatusOK, gin.H{"status": "ok", "timestamp": time.Now().Format(time.RFC3339)})
 	})
 
 	return router, nil
