@@ -211,8 +211,8 @@ func (h *Handler) normalizeEvent(event *provider.WebhookEvent, providerID provid
 		event.ProviderID = NormalizeProviderID(event.ProviderID)
 	}
 
-	if event.Payload == nil {
-		event.Payload = body
+	if event.RawPayload == nil {
+		event.RawPayload = body
 	}
 
 	if verified {
