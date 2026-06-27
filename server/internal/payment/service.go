@@ -438,13 +438,32 @@ func NormalizePhone(country string, phone string) string {
 	phone = strings.ReplaceAll(phone, ")", "")
 	phone = strings.TrimPrefix(phone, "+")
 
-	if country == "GH" || country == "GHA" {
-		if strings.HasPrefix(phone, "0") && len(phone) == 10 {
-			return "233" + phone[1:]
+	if phone == "" {
+		return ""
+	}
+	if strings.HasPrefix(phone, "00") && len(phone) > 2 {
+		phone = phone[2:]
+	}
+	if prefix := phonePrefixForCountry(country); prefix != "" {
+		if phone == prefix || strings.HasPrefix(phone, prefix) {
+			return phone
+		}
+		if strings.HasPrefix(phone, "0") && len(phone) > 1 {
+			return prefix + phone[1:]
 		}
 	}
 
 	return phone
+}
+
+func phonePrefixForCountry(country string) string {
+	country = normalizeCountry(country)
+	for _, rule := range paymentregistry.PawaPayMVPRules() {
+		if rule.Country == country || rule.CountryAlpha3 == country {
+			return strings.TrimSpace(rule.PhonePrefix)
+		}
+	}
+	return ""
 }
 
 func normalizeHooks(hooks Hooks) Hooks {

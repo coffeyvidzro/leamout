@@ -59,12 +59,7 @@ func (s *Service) StartCheckoutPayment(ctx context.Context, params StartCheckout
 	}
 
 	externalRef := uuid.NewString()
-	metadata := map[string]string{"checkout_session_id": params.CheckoutID.String(), "user_id": params.UserID.String(), "country": strings.ToUpper(strings.TrimSpace(params.Country)), "currency": strings.ToUpper(strings.TrimSpace(params.Currency))}
-	for key, value := range params.Metadata {
-		if _, exists := metadata[key]; !exists {
-			metadata[key] = value
-		}
-	}
+	metadata := checkoutPaymentMetadata(params)
 
 	result, err := s.processor.InitiatePayment(ctx, paymentkernel.InitiatePaymentRequest{
 		UserID:          params.UserID.String(),
@@ -188,6 +183,22 @@ func contextFromPayment(ctx paymentkernel.Context) context.Context {
 		return realCtx
 	}
 	return context.Background()
+}
+
+func checkoutPaymentMetadata(params StartCheckoutPaymentParams) map[string]string {
+	metadata := make(map[string]string, len(params.Metadata)+4)
+	for key, value := range params.Metadata {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		metadata[key] = value
+	}
+	metadata["checkout_session_id"] = params.CheckoutID.String()
+	metadata["user_id"] = params.UserID.String()
+	metadata["country"] = strings.ToUpper(strings.TrimSpace(params.Country))
+	metadata["currency"] = strings.ToUpper(strings.TrimSpace(params.Currency))
+	return metadata
 }
 
 func cloneAnyMap(src map[string]any) map[string]any {
