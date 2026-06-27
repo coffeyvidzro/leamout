@@ -19,11 +19,12 @@ const (
 
 // Config controls how Leamout chooses a payment provider for a payment attempt.
 //
-// Routes are prioritized. The first provider that is enabled, registered, and
-// capable of serving the request is selected.
+// MVP note: Leamout currently uses PawaPay as the only payment aggregator.
+// Routes are still kept so more providers can be added later without changing
+// checkout/domain code.
 //
 // Example environment route:
-// PAYMENT_ROUTE_GH_GHS_MOBILE_MONEY=moolre,pawapay
+// PAYMENT_ROUTE_GH_GHS_MOBILE_MONEY=pawapay
 //
 // The suffix format is:
 // PAYMENT_ROUTE_<COUNTRY>_<CURRENCY>_<METHOD>
@@ -44,27 +45,24 @@ type Route struct {
 	Providers []provider.ID          `json:"providers"`
 }
 
-// DefaultConfig gives Leamout a Ghana-first configuration while keeping
-// PawaPay available as a fallback.
+// DefaultConfig gives Leamout a PawaPay-only MVP payment route.
 func DefaultConfig() Config {
 	return Config{
 		EnabledProviders: []provider.ID{
-			provider.ProviderMoolre,
 			provider.ProviderPawaPay,
 		},
-		DefaultProvider: provider.ProviderMoolre,
+		DefaultProvider: provider.ProviderPawaPay,
 		Routes: []Route{
 			{
 				Country:  "GH",
 				Currency: "GHS",
 				Method:   provider.PaymentMethodMobileMoney,
 				Providers: []provider.ID{
-					provider.ProviderMoolre,
 					provider.ProviderPawaPay,
 				},
 			},
 		},
-		AllowFallback:      true,
+		AllowFallback:      false,
 		StrictCapabilities: true,
 	}
 }
@@ -267,56 +265,11 @@ func parseProviderList(raw string) []provider.ID {
 	return dedupeProviderIDs(ids)
 }
 
-func normalizeProviderIDs(ids []provider.ID) []provider.ID {
-	out := make([]provider.ID, 0, len(ids))
-	for _, id := range ids {
-		id = normalizeProviderID(string(id))
-		if id == "" {
-			continue
-		}
-		out = append(out, id)
-	}
-	return dedupeProviderIDs(out)
-}
-
-func dedupeProviderIDs(ids []provider.ID) []provider.ID {
-	seen := map[provider.ID]struct{}{}
-	out := make([]provider.ID, 0, len(ids))
-	for _, id := range ids {
-		id = normalizeProviderID(string(id))
-		if id == "" {
-			continue
-		}
-		if _, ok := seen[id]; ok {
-			continue
-		}
-		seen[id] = struct{}{}
-		out = append(out, id)
-	}
-	return out
-}
-
-func normalizeProviderID(raw string) provider.ID {
-	return provider.ID(strings.ToLower(strings.TrimSpace(raw)))
-}
-
-func normalizeCountry(raw string) string {
-	return strings.ToUpper(strings.TrimSpace(raw))
-}
-
-func normalizeCurrency(raw string) string {
-	return strings.ToUpper(strings.TrimSpace(raw))
-}
-
-func normalizeMethod(method provider.PaymentMethod) provider.PaymentMethod {
-	return provider.PaymentMethod(strings.ToLower(strings.TrimSpace(string(method))))
-}
-
 func parseBoolDefault(raw string, fallback bool) bool {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "1", "true", "yes", "y", "on":
+	case "true", "1", "yes", "y":
 		return true
-	case "0", "false", "no", "n", "off":
+	case "false", "0", "no", "n":
 		return false
 	default:
 		return fallback
