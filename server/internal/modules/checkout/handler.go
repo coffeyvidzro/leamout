@@ -21,6 +21,7 @@ func NewHandler(service *Service) *Handler {
 
 func (h *Handler) Create(c *gin.Context) {
 	userID := middleware.GetUserID(c)
+
 	var req CreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -28,7 +29,12 @@ func (h *Handler) Create(c *gin.Context) {
 	}
 
 	session, err := h.service.Create(c.Request.Context(), userID, req)
+	if errors.Is(err, ErrInvalidCheckoutRequest) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": checkoutErrorMessage(err)})
+		return
+	}
 	if err != nil {
+		slog.ErrorContext(c.Request.Context(), "failed to create checkout session", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create checkout session"})
 		return
 	}
@@ -41,6 +47,7 @@ func (h *Handler) List(c *gin.Context) {
 
 	sessions, err := h.service.List(c.Request.Context(), userID)
 	if err != nil {
+		slog.ErrorContext(c.Request.Context(), "failed to list checkout sessions", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch checkout sessions"})
 		return
 	}
@@ -50,6 +57,7 @@ func (h *Handler) List(c *gin.Context) {
 
 func (h *Handler) Get(c *gin.Context) {
 	userID := middleware.GetUserID(c)
+
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid checkout session id"})
@@ -62,6 +70,7 @@ func (h *Handler) Get(c *gin.Context) {
 
 func (h *Handler) Update(c *gin.Context) {
 	userID := middleware.GetUserID(c)
+
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid checkout session id"})
@@ -83,32 +92,6 @@ func (h *Handler) GetPublic(c *gin.Context) {
 	respondCheckout(c, session, err)
 }
 
-func (h *Handler) Quote(c *gin.Context) {
-	var req QuoteRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	req.Intelligence = requestIntelligence(c)
-
-	response, err := h.service.Quote(c.Request.Context(), c.Param("clientSecret"), req)
-	if errors.Is(err, ErrNotFound) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "checkout session not found"})
-		return
-	}
-	if errors.Is(err, ErrInvalidPaymentRequest) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": checkoutErrorMessage(err)})
-		return
-	}
-	if err != nil {
-		slog.ErrorContext(c.Request.Context(), "checkout quote failed", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to quote payment"})
-		return
-	}
-
-	c.JSON(http.StatusOK, response)
-}
-
 func (h *Handler) Pay(c *gin.Context) {
 	var req PayRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -122,7 +105,7 @@ func (h *Handler) Pay(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "checkout session not found"})
 		return
 	}
-	if errors.Is(err, ErrInvalidPaymentRequest) {
+	if errors.Is(err, ErrInvalidCheckoutRequest) || errors.Is(err, ErrInvalidPaymentRequest) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": checkoutErrorMessage(err)})
 		return
 	}
@@ -135,26 +118,13 @@ func (h *Handler) Pay(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-func (h *Handler) Confirm(c *gin.Context) {
-	session, err := h.service.Confirm(c.Request.Context(), c.Param("clientSecret"))
-	if errors.Is(err, ErrNotFound) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "checkout session not found"})
-		return
-	}
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to confirm checkout session"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "checkout confirmed", "session": session})
-}
-
 func respondCheckout(c *gin.Context, session *Session, err error) {
 	if errors.Is(err, ErrNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "checkout session not found"})
 		return
 	}
 	if err != nil {
+		slog.ErrorContext(c.Request.Context(), "failed to fetch checkout session", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch checkout session"})
 		return
 	}
@@ -173,10 +143,14 @@ func requestIntelligence(c *gin.Context) RequestIntelligence {
 
 func checkoutErrorMessage(err error) string {
 	message := strings.TrimSpace(err.Error())
-	message = strings.TrimPrefix(message, ErrInvalidPaymentRequest.Error()+":")
-	message = strings.TrimSpace(message)
-	if message == "" || message == ErrInvalidPaymentRequest.Error() {
-		return "unsupported payment method for this checkout"
+	for _, prefix := range []string{
+		ErrInvalidCheckoutRequest.Error() + ":",
+		ErrInvalidPaymentRequest.Error() + ":",
+	} {
+		message = strings.TrimSpace(strings.TrimPrefix(message, prefix))
+	}
+	if message == "" || message == ErrInvalidCheckoutRequest.Error() || message == ErrInvalidPaymentRequest.Error() {
+		return "invalid checkout request"
 	}
 	return message
 }

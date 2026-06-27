@@ -10,15 +10,15 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/modules/credits"
 	"github.com/cuffeyvidzro/leamout/internal/modules/customer"
 	"github.com/cuffeyvidzro/leamout/internal/modules/dunning"
-	modulepayment "github.com/cuffeyvidzro/leamout/internal/modules/payment"
-	"github.com/cuffeyvidzro/leamout/internal/modules/paymentmethod"
 	"github.com/cuffeyvidzro/leamout/internal/modules/pat"
+	modulepayment "github.com/cuffeyvidzro/leamout/internal/modules/payment"
 	"github.com/cuffeyvidzro/leamout/internal/modules/product"
 	"github.com/cuffeyvidzro/leamout/internal/modules/session"
 	"github.com/cuffeyvidzro/leamout/internal/modules/subscription"
 	"github.com/cuffeyvidzro/leamout/internal/modules/transaction"
 	"github.com/cuffeyvidzro/leamout/internal/modules/user"
 	"github.com/cuffeyvidzro/leamout/internal/modules/wallet"
+	paymentwebhook "github.com/cuffeyvidzro/leamout/internal/payment/webhook"
 	"github.com/gin-gonic/gin"
 )
 
@@ -57,46 +57,56 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 
 	transactionService := transaction.NewService(transactionRepo)
 	walletService := wallet.NewService(walletRepo)
-	paymentService := modulepayment.NewService(paymentRepo, nil, transactionService, walletService, checkoutRepo)
-	paymentKernelService, paymentWebhookHandler, err := s.paymentStack(paymentService)
-	if err != nil {
-		return nil, err
-	}
-	paymentService.SetProcessor(paymentKernelService)
+
+	paymentStack := s.buildPaymentStack(
+		checkoutRepo,
+		paymentRepo,
+		transactionService,
+		walletService,
+	)
 
 	userService := user.NewService(userRepo)
 	sessionService := session.NewService(sessionRepo)
 	authService := auth.NewService(authRepo, s.oauthRegistry(), sessionService)
 	customerService := customer.NewService(customerRepo)
 	productService := product.NewService(productRepo)
-	checkoutService := checkout.NewService(checkoutRepo, paymentService, s.cfg.PaymentWebhookURL)
 	patService := pat.NewService(patRepo)
 	subscriptionService := subscription.NewService(subscriptionRepo)
 	creditsService := credits.NewService(creditsRepo)
-	dunningService := dunning.NewService(dunningRepo, checkoutService)
-	paymentMethodService := paymentmethod.NewService()
+	dunningService := dunning.NewService(dunningRepo, paymentStack.CheckoutService)
 
 	userHandler := user.NewHandler(userService)
 	sessionHandler := session.NewHandler(sessionService)
 	authHandler := auth.NewHandler(authService, s.cfg.IsDevelopment())
 	customerHandler := customer.NewHandler(customerService)
 	productHandler := product.NewHandler(productService)
-	checkoutHandler := checkout.NewHandler(checkoutService)
+	checkoutHandler := paymentStack.CheckoutHandler
 	patHandler := pat.NewHandler(patService)
 	subscriptionHandler := subscription.NewHandler(subscriptionService)
 	creditsHandler := credits.NewHandler(creditsService)
 	dunningHandler := dunning.NewHandler(dunningService, s.cfg.FrontendBaseURL)
-	paymentHandler := modulepayment.NewHandler(paymentService)
 	transactionHandler := transaction.NewHandler(transactionService)
 	walletHandler := wallet.NewHandler(walletService)
-	paymentMethodHandler := paymentmethod.NewHandler(paymentMethodService)
+	paymentHandler := paymentStack.PaymentHandler
+
+	paymentWebhookRegistry, err := s.paymentWebhookRegistry()
+	if err != nil {
+		return nil, err
+	}
+
+	paymentWebhookHandler := paymentwebhook.NewHandler(paymentWebhookRegistry)
 
 	sessionAuthMiddleware := middleware.SessionAuthMiddleware(sessionService)
 	authMiddleware := middleware.AuthMiddleware(sessionService, patService)
 
 	v1 := router.Group("/v1")
 	{
-		paymentmethod.RegisterRoutes(v1, paymentMethodHandler)
+		webhooks := v1.Group("/webhooks")
+		{
+			webhooks.POST("/:provider", paymentWebhookHandler.Handle)
+			webhooks.POST("/:provider/:eventType", paymentWebhookHandler.Handle)
+		}
+
 		auth.RegisterRoutes(v1, authHandler, sessionAuthMiddleware)
 		pat.RegisterRoutes(v1, patHandler, sessionAuthMiddleware)
 		session.RegisterRoutes(v1, sessionHandler, authMiddleware)
@@ -107,15 +117,16 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 		checkout.RegisterRoutes(v1, checkoutHandler, authMiddleware)
 		credits.RegisterRoutes(v1, creditsHandler, authMiddleware)
 		dunning.RegisterRoutes(v1, dunningHandler, authMiddleware)
-		modulepayment.RegisterRoutes(v1, paymentHandler, authMiddleware)
 		transaction.RegisterRoutes(v1, transactionHandler, authMiddleware)
 		wallet.RegisterRoutes(v1, walletHandler, authMiddleware)
+		modulepayment.RegisterRoutes(v1, paymentHandler, authMiddleware)
 	}
 
-	paymentWebhookHandler.RegisterRoutes(router.Group("/webhooks/payments"))
-
 	router.GET("/health", func(c *gin.Context) {
-		c.JSON(nethttp.StatusOK, gin.H{"status": "ok", "timestamp": time.Now().Format(time.RFC3339)})
+		c.JSON(nethttp.StatusOK, gin.H{
+			"status":    "ok",
+			"timestamp": time.Now().Format(time.RFC3339),
+		})
 	})
 
 	return router, nil

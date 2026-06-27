@@ -7,6 +7,7 @@ import (
 )
 
 type Status string
+
 type AttemptStatus string
 
 const (
@@ -27,78 +28,48 @@ const (
 )
 
 type Payment struct {
-	ID                uuid.UUID
+	ID                uuid.UUID      `json:"id"`
+	UserID            uuid.UUID      `json:"user_id"`
+	CheckoutID        *uuid.UUID     `json:"checkout_id,omitempty"`
+	CustomerID        *uuid.UUID     `json:"customer_id,omitempty"`
+	ExternalID        string         `json:"external_id"`
+	Provider          string         `json:"provider"`
+	ProviderReference *string        `json:"provider_reference,omitempty"`
+	Status            Status         `json:"status"`
+	Currency          string         `json:"currency"`
+	Amount            int64          `json:"amount"`
+	FeeAmount         int64          `json:"fee_amount"`
+	NetAmount         int64          `json:"net_amount"`
+	Metadata          map[string]any `json:"metadata"`
+	CreatedAt         time.Time      `json:"created_at"`
+	UpdatedAt         time.Time      `json:"updated_at"`
+}
+
+type Attempt struct {
+	ID                uuid.UUID      `json:"id"`
+	PaymentID         uuid.UUID      `json:"payment_id"`
+	Provider          string         `json:"provider"`
+	ProviderReference *string        `json:"provider_reference,omitempty"`
+	Status            AttemptStatus  `json:"status"`
+	ErrorCode         *string        `json:"error_code,omitempty"`
+	ErrorMessage      *string        `json:"error_message,omitempty"`
+	RawRequest        map[string]any `json:"raw_request"`
+	RawResponse       map[string]any `json:"raw_response"`
+	AttemptedAt       time.Time      `json:"attempted_at"`
+}
+
+type CreateParams struct {
 	UserID            uuid.UUID
 	CheckoutID        *uuid.UUID
 	CustomerID        *uuid.UUID
-	ExternalID        *string
+	ExternalID        string
 	Provider          string
-	ProviderReference *string
+	ProviderReference string
 	Status            Status
 	Currency          string
 	Amount            int64
 	FeeAmount         int64
-	NetAmount         int64
 	Metadata          map[string]any
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
-}
-
-type Attempt struct {
-	ID                uuid.UUID
-	PaymentID         uuid.UUID
-	Provider          string
-	ProviderReference *string
-	Status            AttemptStatus
-	ErrorCode         *string
-	ErrorMessage      *string
-	RawRequest        map[string]any
-	RawResponse       map[string]any
-	AttemptedAt       time.Time
-}
-
-type StartCheckoutPaymentParams struct {
-	CheckoutID      uuid.UUID
-	UserID          uuid.UUID
-	CustomerID      *uuid.UUID
-	Amount          int64
-	FeeAmount       int64
-	Currency        string
-	Country         string
-	Phone           string
-	Operator        string
-	CustomerName    string
-	CustomerEmail   string
-	Label           string
-	ReturnURL       string
-	Metadata        map[string]string
-	ProviderOptions map[string]any
-}
-
-type StartCheckoutPaymentResult struct {
-	PaymentID         uuid.UUID
-	CheckoutSessionID uuid.UUID
-	ExternalRef       string
-	ProviderID        string
-	ProviderReference string
-	Status            Status
-	AttemptStatus     AttemptStatus
-	NextActionType    string
-	NextActionURL     string
-	CustomerMessage   string
-}
-
-type CreateParams struct {
-	UserID     uuid.UUID
-	CheckoutID *uuid.UUID
-	CustomerID *uuid.UUID
-	ExternalID string
-	Provider   string
-	Status     Status
-	Currency   string
-	Amount     int64
-	FeeAmount  int64
-	Metadata   map[string]any
 }
 
 type UpdateFromProviderParams struct {
@@ -106,7 +77,6 @@ type UpdateFromProviderParams struct {
 	Provider          string
 	ProviderReference string
 	Status            Status
-	RawResponse       []byte
 	Metadata          map[string]any
 }
 
@@ -118,7 +88,7 @@ type CreateAttemptParams struct {
 	ErrorCode         string
 	ErrorMessage      string
 	RawRequest        map[string]any
-	RawResponse       []byte
+	RawResponse       map[string]any
 }
 
 type ListParams struct {

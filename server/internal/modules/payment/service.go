@@ -3,20 +3,21 @@ package payment
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
-	paymentkernel "github.com/cuffeyvidzro/leamout/internal/payment"
-	"github.com/cuffeyvidzro/leamout/internal/payment/provider"
 	"github.com/cuffeyvidzro/leamout/internal/modules/transaction"
 	"github.com/cuffeyvidzro/leamout/internal/modules/wallet"
+	corepayment "github.com/cuffeyvidzro/leamout/internal/payment"
 	"github.com/google/uuid"
 )
 
 var ErrInvalidPayment = errors.New("invalid payment")
 
-type Processor interface {
-	InitiatePayment(ctx context.Context, req paymentkernel.InitiatePaymentRequest) (*paymentkernel.InitiatePaymentResult, error)
+type Charger interface {
+	Charge(ctx context.Context, payload corepayment.UnifiedPayload) (*corepayment.ChargeResult, error)
 }
 
 type TransactionCreator interface {
@@ -33,143 +34,362 @@ type CheckoutCompleter interface {
 
 type Service struct {
 	repository        *Repository
-	processor         Processor
+	charger           Charger
 	transactions      TransactionCreator
 	wallet            WalletCreditor
 	checkoutCompleter CheckoutCompleter
 }
 
-func NewService(repository *Repository, processor Processor, transactions TransactionCreator, wallet WalletCreditor, checkoutCompleter CheckoutCompleter) *Service {
-	return &Service{repository: repository, processor: processor, transactions: transactions, wallet: wallet, checkoutCompleter: checkoutCompleter}
+func NewService(repository *Repository, charger Charger, transactions TransactionCreator, wallet WalletCreditor) *Service {
+	return &Service{
+		repository:   repository,
+		charger:      charger,
+		transactions: transactions,
+		wallet:       wallet,
+	}
 }
 
-func (s *Service) SetProcessor(processor Processor) {
-	s.processor = processor
+func (s *Service) SetCharger(charger Charger) {
+	s.charger = charger
 }
 
-func (s *Service) StartCheckoutPayment(ctx context.Context, params StartCheckoutPaymentParams) (*StartCheckoutPaymentResult, error) {
-	if s.processor == nil {
-		return nil, errors.New("payment processor is not configured")
+func (s *Service) SetCheckoutCompleter(completer CheckoutCompleter) {
+	s.checkoutCompleter = completer
+}
+
+// Charge starts a checkout payment using the internal payment orchestration layer
+// and records the attempt in the business payments table.
+func (s *Service) Charge(ctx context.Context, payload corepayment.UnifiedPayload) (*corepayment.ChargeResult, error) {
+	if s.repository == nil {
+		return nil, errors.New("payment repository is not configured")
 	}
-	if params.UserID == uuid.Nil || params.CheckoutID == uuid.Nil || params.Amount <= 0 || strings.TrimSpace(params.Currency) == "" || strings.TrimSpace(params.Country) == "" {
-		return nil, ErrInvalidPayment
-	}
-	if params.FeeAmount < 0 || params.FeeAmount > params.Amount {
-		return nil, ErrInvalidPayment
+	if s.charger == nil {
+		return nil, errors.New("payment charger is not configured")
 	}
 
-	externalRef := uuid.NewString()
-	metadata := checkoutPaymentMetadata(params)
+	payload = normalizeCorePayload(payload)
 
-	result, err := s.processor.InitiatePayment(ctx, paymentkernel.InitiatePaymentRequest{
-		UserID:          params.UserID.String(),
-		ExternalRef:     externalRef,
-		AmountMinor:     params.Amount,
-		Currency:        params.Currency,
-		Country:         params.Country,
-		Method:          provider.PaymentMethodMobileMoney,
-		Operator:        paymentkernel.MobileMoneyOperator(params.Operator),
-		Description:     params.Label,
-		Customer:        paymentkernel.Customer{Phone: params.Phone, Country: params.Country, Name: params.CustomerName, Email: params.CustomerEmail},
-		ReturnURL:       params.ReturnURL,
-		Metadata:        metadata,
-		ProviderOptions: cloneAnyMap(params.ProviderOptions),
-	})
+	paymentCtx, err := checkoutContextFromMetadata(payload.Metadata)
 	if err != nil {
 		return nil, err
 	}
 
-	status := statusFromProvider(result.Status)
-	checkoutID := params.CheckoutID
+	amount, err := parseAmount(payload.Amount)
+	if err != nil {
+		return nil, err
+	}
+
+	result, chargeErr := s.charger.Charge(ctx, payload)
+	if chargeErr != nil {
+		return nil, chargeErr
+	}
+	if result == nil {
+		result = &corepayment.ChargeResult{
+			TransactionID: payload.TransactionID,
+			Status:        corepayment.PaymentStatusPending,
+			Message:       "payment request accepted",
+			CreatedAt:     time.Now().UTC(),
+		}
+	}
+
+	if result.TransactionID == "" {
+		result.TransactionID = payload.TransactionID
+	}
+
+	metadata := stringMapToAny(payload.Metadata)
+	metadata["payment_transaction_id"] = result.TransactionID
+	metadata["payment_provider"] = string(result.Provider)
+	metadata["payment_status"] = string(result.Status)
+	metadata["payment_country"] = payload.Country
+	metadata["payment_network"] = payload.Network
+	metadata["payment_currency"] = payload.Currency
+	metadata["payment_phone"] = payload.PhoneNumber
+	if result.ProviderReference != "" {
+		metadata["payment_provider_reference"] = result.ProviderReference
+	}
+	if result.Message != "" {
+		metadata["payment_message"] = result.Message
+	}
+
 	paymentRecord, err := s.repository.Create(ctx, CreateParams{
-		UserID:     params.UserID,
-		CheckoutID: &checkoutID,
-		CustomerID: params.CustomerID,
-		ExternalID: result.ExternalRef,
-		Provider:   string(result.ProviderID),
-		Status:     status,
-		Currency:   params.Currency,
-		Amount:     params.Amount,
-		FeeAmount:  params.FeeAmount,
-		Metadata:   stringMapToAny(metadata),
+		UserID:            paymentCtx.UserID,
+		CheckoutID:        &paymentCtx.CheckoutID,
+		CustomerID:        paymentCtx.CustomerID,
+		ExternalID:        result.TransactionID,
+		Provider:          string(result.Provider),
+		ProviderReference: result.ProviderReference,
+		Status:            statusFromCore(result.Status),
+		Currency:          payload.Currency,
+		Amount:            amount,
+		FeeAmount:         0,
+		Metadata:          metadata,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	if result.ProviderReference != "" || status != StatusPending {
-		paymentRecord, _ = s.repository.UpdateFromProvider(ctx, UpdateFromProviderParams{ExternalID: result.ExternalRef, Provider: string(result.ProviderID), ProviderReference: result.ProviderReference, Status: status, Metadata: stringMapToAny(result.Metadata)})
+	_, _ = s.repository.CreateAttempt(ctx, CreateAttemptParams{
+		PaymentID:         paymentRecord.ID,
+		Provider:          string(result.Provider),
+		ProviderReference: result.ProviderReference,
+		Status:            attemptStatusFromCore(result.Status),
+		RawRequest:        attemptRequest(payload),
+		RawResponse:       attemptResponse(result),
+	})
+
+	if paymentRecord.Status == StatusCaptured {
+		if err := s.settleCapturedPayment(ctx, paymentRecord); err != nil {
+			return nil, err
+		}
 	}
 
-	return &StartCheckoutPaymentResult{PaymentID: paymentRecord.ID, CheckoutSessionID: params.CheckoutID, ExternalRef: result.ExternalRef, ProviderID: string(result.ProviderID), ProviderReference: result.ProviderReference, Status: status, AttemptStatus: AttemptStatus(result.Status), NextActionType: string(result.NextActionType), NextActionURL: result.NextActionURL, CustomerMessage: result.CustomerMessage}, nil
+	return result, nil
 }
 
 func (s *Service) Get(ctx context.Context, userID, id uuid.UUID) (*Payment, error) {
 	if userID == uuid.Nil || id == uuid.Nil {
 		return nil, ErrInvalidPayment
 	}
+
 	return s.repository.Get(ctx, userID, id)
 }
 
 func (s *Service) List(ctx context.Context, params ListParams) ([]Payment, error) {
+	if params.UserID == uuid.Nil {
+		return nil, ErrInvalidPayment
+	}
+
 	return s.repository.List(ctx, params)
 }
 
-func (s *Service) PaymentInitiated(ctx paymentkernel.Context, result *paymentkernel.InitiatePaymentResult) error { return nil }
-func (s *Service) PaymentVerified(ctx paymentkernel.Context, result *paymentkernel.VerifyPaymentResult) error { return nil }
-
-func (s *Service) WebhookProcessed(ctx paymentkernel.Context, result *paymentkernel.ProcessedWebhookResult) error {
-	if result == nil {
-		return nil
-	}
-	metadata := stringMapToAny(result.Metadata)
-	if result.Verification != nil && len(result.Verification.Metadata) > 0 {
-		metadata = stringMapToAny(result.Verification.Metadata)
+func (s *Service) ApplyProviderResult(ctx context.Context, params UpdateFromProviderParams) (*Payment, error) {
+	if s.repository == nil {
+		return nil, errors.New("payment repository is not configured")
 	}
 
-	realCtx := contextFromPayment(ctx)
-	paymentRecord, err := s.repository.UpdateFromProvider(realCtx, UpdateFromProviderParams{ExternalID: result.ExternalRef, Provider: string(result.ProviderID), ProviderReference: result.ProviderReference, Status: statusFromProvider(result.Status), Metadata: metadata})
+	params.ExternalID = strings.TrimSpace(params.ExternalID)
+	params.Provider = strings.ToLower(strings.TrimSpace(params.Provider))
+	if params.ExternalID == "" || params.Provider == "" || params.Status == "" {
+		return nil, ErrInvalidPayment
+	}
+
+	paymentRecord, err := s.repository.UpdateFromProvider(ctx, params)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if paymentRecord.Status != StatusCaptured {
+
+	_, _ = s.repository.CreateAttempt(ctx, CreateAttemptParams{
+		PaymentID:         paymentRecord.ID,
+		Provider:          params.Provider,
+		ProviderReference: params.ProviderReference,
+		Status:            attemptStatusFromPayment(params.Status),
+		RawResponse:       params.Metadata,
+	})
+
+	if paymentRecord.Status == StatusCaptured {
+		if err := s.settleCapturedPayment(ctx, paymentRecord); err != nil {
+			return nil, err
+		}
+	}
+
+	return paymentRecord, nil
+}
+
+func (s *Service) settleCapturedPayment(ctx context.Context, paymentRecord *Payment) error {
+	if paymentRecord == nil || paymentRecord.Status != StatusCaptured {
 		return nil
 	}
 
 	var transactionRecord *transaction.Transaction
+	var err error
+
 	if s.transactions != nil {
-		externalID := result.ProviderReference
-		if strings.TrimSpace(externalID) == "" {
-			externalID = result.ExternalRef
+		externalID := paymentRecord.ExternalID
+		if paymentRecord.ProviderReference != nil && strings.TrimSpace(*paymentRecord.ProviderReference) != "" {
+			externalID = strings.TrimSpace(*paymentRecord.ProviderReference)
 		}
-		transactionRecord, err = s.transactions.Create(realCtx, transaction.CreateParams{UserID: paymentRecord.UserID, PaymentID: &paymentRecord.ID, CheckoutID: paymentRecord.CheckoutID, ExternalID: externalID, Type: transaction.TypeCapture, Status: transaction.StatusSucceeded, Currency: paymentRecord.Currency, Amount: paymentRecord.NetAmount, OccurredAt: time.Now().UTC(), Metadata: paymentRecord.Metadata})
+
+		transactionRecord, err = s.transactions.Create(ctx, transaction.CreateParams{
+			UserID:     paymentRecord.UserID,
+			PaymentID:  &paymentRecord.ID,
+			CheckoutID: paymentRecord.CheckoutID,
+			ExternalID: externalID,
+			Type:       transaction.TypeCapture,
+			Status:     transaction.StatusSucceeded,
+			Currency:   paymentRecord.Currency,
+			Amount:     paymentRecord.NetAmount,
+			OccurredAt: time.Now().UTC(),
+			Metadata:   paymentRecord.Metadata,
+		})
 		if err != nil {
 			return err
 		}
 	}
 
 	if s.wallet != nil && transactionRecord != nil {
-		if err := s.wallet.CreditPaymentCapture(realCtx, wallet.CreditPaymentCaptureParams{UserID: paymentRecord.UserID, PaymentID: paymentRecord.ID, TransactionID: transactionRecord.ID, Country: metadataString(paymentRecord.Metadata, "country"), Currency: paymentRecord.Currency, Amount: paymentRecord.NetAmount, Metadata: paymentRecord.Metadata}); err != nil {
+		if err := s.wallet.CreditPaymentCapture(ctx, wallet.CreditPaymentCaptureParams{
+			UserID:        paymentRecord.UserID,
+			PaymentID:     paymentRecord.ID,
+			TransactionID: transactionRecord.ID,
+			Country:       metadataString(paymentRecord.Metadata, "payment_country"),
+			Currency:      paymentRecord.Currency,
+			Amount:        paymentRecord.NetAmount,
+			Metadata:      paymentRecord.Metadata,
+		}); err != nil {
 			return err
 		}
 	}
 
 	if s.checkoutCompleter != nil && paymentRecord.CheckoutID != nil {
-		return s.checkoutCompleter.CompletePaidCheckout(realCtx, *paymentRecord.CheckoutID)
+		return s.checkoutCompleter.CompletePaidCheckout(ctx, *paymentRecord.CheckoutID)
 	}
+
 	return nil
 }
 
-func statusFromProvider(status provider.PaymentStatus) Status {
+type checkoutPaymentContext struct {
+	UserID     uuid.UUID
+	CheckoutID uuid.UUID
+	CustomerID *uuid.UUID
+}
+
+func checkoutContextFromMetadata(metadata map[string]string) (*checkoutPaymentContext, error) {
+	if metadata == nil {
+		return nil, fmt.Errorf("%w: missing checkout metadata", ErrInvalidPayment)
+	}
+
+	userID, err := metadataUUID(metadata, "checkout_user_id")
+	if err != nil {
+		return nil, err
+	}
+	checkoutID, err := metadataUUID(metadata, "checkout_session_id")
+	if err != nil {
+		return nil, err
+	}
+
+	var customerID *uuid.UUID
+	if raw := strings.TrimSpace(metadata["checkout_customer_id"]); raw != "" {
+		parsed, err := uuid.Parse(raw)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid checkout_customer_id", ErrInvalidPayment)
+		}
+		customerID = &parsed
+	}
+
+	return &checkoutPaymentContext{
+		UserID:     userID,
+		CheckoutID: checkoutID,
+		CustomerID: customerID,
+	}, nil
+}
+
+func metadataUUID(metadata map[string]string, key string) (uuid.UUID, error) {
+	raw := strings.TrimSpace(metadata[key])
+	if raw == "" {
+		return uuid.Nil, fmt.Errorf("%w: missing %s", ErrInvalidPayment, key)
+	}
+
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("%w: invalid %s", ErrInvalidPayment, key)
+	}
+
+	return id, nil
+}
+
+func parseAmount(value string) (int64, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, fmt.Errorf("%w: missing amount", ErrInvalidPayment)
+	}
+
+	amount, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%w: invalid amount", ErrInvalidPayment)
+	}
+	if amount <= 0 {
+		return 0, fmt.Errorf("%w: amount must be greater than zero", ErrInvalidPayment)
+	}
+
+	return amount, nil
+}
+
+func normalizeCorePayload(payload corepayment.UnifiedPayload) corepayment.UnifiedPayload {
+	payload.TransactionID = strings.TrimSpace(payload.TransactionID)
+	payload.Country = strings.ToUpper(strings.TrimSpace(payload.Country))
+	payload.Network = strings.ToUpper(strings.TrimSpace(payload.Network))
+	payload.PhoneNumber = strings.TrimPrefix(strings.TrimSpace(payload.PhoneNumber), "+")
+	payload.Amount = strings.TrimSpace(payload.Amount)
+	payload.Currency = strings.ToUpper(strings.TrimSpace(payload.Currency))
+	payload.Operator = strings.TrimSpace(payload.Operator)
+
+	if payload.Metadata == nil {
+		payload.Metadata = map[string]string{}
+	}
+
+	return payload
+}
+
+func statusFromCore(status corepayment.PaymentStatus) Status {
 	switch status {
-	case provider.PaymentStatusSucceeded:
+	case corepayment.PaymentStatusSucceeded:
 		return StatusCaptured
-	case provider.PaymentStatusFailed:
+	case corepayment.PaymentStatusFailed:
 		return StatusFailed
-	case provider.PaymentStatusCanceled, provider.PaymentStatusExpired:
-		return StatusVoided
 	default:
 		return StatusPending
+	}
+}
+
+func attemptStatusFromCore(status corepayment.PaymentStatus) AttemptStatus {
+	switch status {
+	case corepayment.PaymentStatusSucceeded:
+		return AttemptStatusSucceeded
+	case corepayment.PaymentStatusFailed:
+		return AttemptStatusFailed
+	default:
+		return AttemptStatusProcessing
+	}
+}
+
+func attemptStatusFromPayment(status Status) AttemptStatus {
+	switch status {
+	case StatusCaptured:
+		return AttemptStatusSucceeded
+	case StatusFailed:
+		return AttemptStatusFailed
+	case StatusVoided:
+		return AttemptStatusCanceled
+	default:
+		return AttemptStatusProcessing
+	}
+}
+
+func attemptRequest(payload corepayment.UnifiedPayload) map[string]any {
+	return map[string]any{
+		"transaction_id": payload.TransactionID,
+		"country":        payload.Country,
+		"network":        payload.Network,
+		"phone_number":   payload.PhoneNumber,
+		"amount":         payload.Amount,
+		"currency":       payload.Currency,
+		"operator":       payload.Operator,
+		"provider":       string(payload.Provider),
+	}
+}
+
+func attemptResponse(result *corepayment.ChargeResult) map[string]any {
+	if result == nil {
+		return map[string]any{}
+	}
+
+	return map[string]any{
+		"transaction_id":     result.TransactionID,
+		"provider":           string(result.Provider),
+		"provider_reference": result.ProviderReference,
+		"status":             string(result.Status),
+		"message":            result.Message,
+		"created_at":         result.CreatedAt,
 	}
 }
 
@@ -177,43 +397,3 @@ func metadataString(metadata map[string]any, key string) string {
 	value, _ := metadata[key].(string)
 	return strings.TrimSpace(value)
 }
-
-func contextFromPayment(ctx paymentkernel.Context) context.Context {
-	if realCtx, ok := ctx.(context.Context); ok {
-		return realCtx
-	}
-	return context.Background()
-}
-
-func checkoutPaymentMetadata(params StartCheckoutPaymentParams) map[string]string {
-	metadata := make(map[string]string, len(params.Metadata)+4)
-	for key, value := range params.Metadata {
-		key = strings.TrimSpace(key)
-		if key == "" {
-			continue
-		}
-		metadata[key] = value
-	}
-	metadata["checkout_session_id"] = params.CheckoutID.String()
-	metadata["user_id"] = params.UserID.String()
-	metadata["country"] = strings.ToUpper(strings.TrimSpace(params.Country))
-	metadata["currency"] = strings.ToUpper(strings.TrimSpace(params.Currency))
-	return metadata
-}
-
-func cloneAnyMap(src map[string]any) map[string]any {
-	if len(src) == 0 {
-		return nil
-	}
-	out := make(map[string]any, len(src))
-	for key, value := range src {
-		key = strings.TrimSpace(key)
-		if key == "" {
-			continue
-		}
-		out[key] = value
-	}
-	return out
-}
-
-var _ paymentkernel.Hooks = (*Service)(nil)

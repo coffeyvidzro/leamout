@@ -13,6 +13,5 @@ func RegisterRoutes(router gin.IRouter, handler *Handler, authMiddleware gin.Han
 
 	public := router.Group("/checkout")
 	public.GET("/:clientSecret", handler.GetPublic)
-	public.POST("/:clientSecret/quote", handler.Quote)
 	public.POST("/:clientSecret/pay", handler.Pay)
 }

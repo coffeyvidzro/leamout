@@ -1,4 +1,4 @@
-package pawapay
+package tola
 
 import (
 	"bytes"
@@ -15,13 +15,13 @@ import (
 )
 
 const (
-	defaultBaseURL = "https://api.sandbox.pawapay.io"
+	defaultBaseURL = "https://apidocs.tolamobile.com"
 )
 
 type Client struct {
-	BaseURL     string
-	BearerToken string
-	HTTPClient  *http.Client
+	BaseURL    string
+	authHeader string
+	HTTPClient *http.Client
 }
 
 func NewClient(cfg config.ProviderConfig) *Client {
@@ -31,41 +31,44 @@ func NewClient(cfg config.ProviderConfig) *Client {
 	}
 
 	return &Client{
-		BaseURL:     baseURL,
-		BearerToken: strings.TrimSpace(cfg.APIKey),
+		BaseURL:    baseURL,
+		authHeader: strings.TrimSpace(cfg.APIKey),
 		HTTPClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
 	}
 }
 
-func (c *Client) CreateDeposit(ctx context.Context, payload *DepositRequest) (*DepositResponse, error) {
-	var result DepositResponse
+func (c *Client) CreateTransaction(ctx context.Context, payload *TransactionRequest) (*TransactionResponse, error) {
+	var result TransactionResponse
 
-	if err := c.doRequest(ctx, http.MethodPost, "/v2/deposits", payload, &result); err != nil {
+	if err := c.doRequest(ctx, http.MethodPost, transactionPath, payload, &result); err != nil {
 		return nil, err
 	}
 
-	switch result.Status {
-	case depositAccepted, depositDuplicate:
-		return &result, nil
-	case depositRejected:
+	if !result.Success {
 		return nil, &APIError{
-			StatusCode:    http.StatusOK,
-			FailureReason: result.FailureReason,
+			StatusCode: http.StatusOK,
+			TolaError:  result.Error,
 		}
-	default:
-		return nil, fmt.Errorf("unexpected pawapay deposit status: %s", result.Status)
 	}
+
+	return &result, nil
 }
 
 func (c *Client) doRequest(ctx context.Context, method, path string, payload any, result any) error {
+	if c.HTTPClient == nil {
+		c.HTTPClient = &http.Client{
+			Timeout: 30 * time.Second,
+		}
+	}
+
 	var body io.Reader
 
 	if payload != nil {
 		encoded, err := json.Marshal(payload)
 		if err != nil {
-			return fmt.Errorf("marshal pawapay request: %w", err)
+			return fmt.Errorf("marshal tola request: %w", err)
 		}
 
 		body = bytes.NewReader(encoded)
@@ -73,32 +76,33 @@ func (c *Client) doRequest(ctx context.Context, method, path string, payload any
 
 	req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+path, body)
 	if err != nil {
-		return fmt.Errorf("create pawapay request: %w", err)
+		return fmt.Errorf("create tola request: %w", err)
 	}
 
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
-	if c.BearerToken != "" {
-		req.Header.Set("Authorization", "Bearer "+c.BearerToken)
+
+	if c.authHeader != "" {
+		req.Header.Set("Authorization", c.authHeader)
 	}
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return errors.New("pawapay gateway connection timed out")
+			return errors.New("tola mobile gateway connection timed out")
 		}
 
 		if errors.Is(ctx.Err(), context.Canceled) {
-			return errors.New("pawapay request cancelled")
+			return errors.New("tola mobile request cancelled")
 		}
 
-		return fmt.Errorf("send pawapay request: %w", err)
+		return fmt.Errorf("send tola request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("read pawapay response: %w", err)
+		return fmt.Errorf("read tola response: %w", err)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -113,7 +117,7 @@ func (c *Client) doRequest(ctx context.Context, method, path string, payload any
 	}
 
 	if err := json.Unmarshal(raw, result); err != nil {
-		return fmt.Errorf("decode pawapay response: %w", err)
+		return fmt.Errorf("decode tola response: %w", err)
 	}
 
 	return nil

@@ -12,8 +12,6 @@ type Source string
 
 type Status string
 
-type PaymentAttemptStatus string
-
 const (
 	ModePayment      Mode = "payment"
 	ModeSubscription Mode = "subscription"
@@ -28,14 +26,6 @@ const (
 	StatusCompleted Status = "completed"
 	StatusExpired   Status = "expired"
 	StatusCanceled  Status = "canceled"
-
-	PaymentAttemptStatusPending    PaymentAttemptStatus = "pending"
-	PaymentAttemptStatusProcessing PaymentAttemptStatus = "processing"
-	PaymentAttemptStatusSucceeded  PaymentAttemptStatus = "succeeded"
-	PaymentAttemptStatusFailed     PaymentAttemptStatus = "failed"
-	PaymentAttemptStatusCanceled   PaymentAttemptStatus = "canceled"
-	PaymentAttemptStatusExpired    PaymentAttemptStatus = "expired"
-	PaymentAttemptStatusUnknown    PaymentAttemptStatus = "unknown"
 )
 
 type Session struct {
@@ -68,7 +58,7 @@ type CreateRequest struct {
 	Source         Source         `json:"source" binding:"omitempty,oneof=api checkout_link dunning manual"`
 	Label          *string        `json:"label" binding:"omitempty,max=240"`
 	Amount         int64          `json:"amount" binding:"required,gt=0"`
-	Currency       string         `json:"currency" binding:"required,len=3,uppercase"`
+	Currency       string         `json:"currency" binding:"required,len=3"`
 	SuccessURL     *string        `json:"success_url" binding:"omitempty,url"`
 	ReturnURL      *string        `json:"return_url" binding:"omitempty,url"`
 	ExpiresAt      time.Time      `json:"expires_at" binding:"required"`
@@ -91,72 +81,25 @@ type RequestIntelligence struct {
 	ClientIP        string `json:"-"`
 }
 
-type QuoteRequest struct {
-	Country      string              `json:"country" binding:"required"`
-	Phone        string              `json:"phone" binding:"required"`
-	Operator     string              `json:"operator" binding:"required"`
-	Intelligence RequestIntelligence `json:"-"`
-}
-
-type QuoteResponse struct {
-	CheckoutSessionID string `json:"checkout_session_id"`
-	Country           string `json:"country"`
-	Currency          string `json:"currency"`
-	Method            string `json:"method"`
-	Operator          string `json:"operator"`
-	BaseAmount        int64  `json:"base_amount"`
-	ProcessingFee     int64  `json:"processing_fee"`
-	PayableAmount     int64  `json:"payable_amount"`
-	FeeRateBps        int64  `json:"fee_rate_bps"`
-	FeeFixedAmount    int64  `json:"fee_fixed_amount"`
-	FeeMode           string `json:"fee_mode"`
-	DetectedCountry   string `json:"detected_country,omitempty"`
-	CountryMismatch   bool   `json:"country_mismatch,omitempty"`
-}
-
 type PayRequest struct {
 	Country       string              `json:"country" binding:"required"`
+	Network       string              `json:"network" binding:"required"`
 	Phone         string              `json:"phone" binding:"required"`
-	Operator      string              `json:"operator" binding:"omitempty"`
 	CustomerName  string              `json:"customer_name" binding:"omitempty,max=160"`
 	CustomerEmail string              `json:"customer_email" binding:"omitempty,email"`
 	Intelligence  RequestIntelligence `json:"-"`
 }
 
 type PayResponse struct {
-	CheckoutSessionID string         `json:"checkout_session_id"`
-	ExternalRef       string         `json:"external_ref"`
-	ProviderID        string         `json:"provider_id"`
-	ProviderReference string         `json:"provider_reference,omitempty"`
-	Status            string         `json:"status"`
-	NextActionType    string         `json:"next_action_type"`
-	NextActionURL     string         `json:"next_action_url,omitempty"`
-	CustomerMessage   string         `json:"customer_message,omitempty"`
-	Quote             *QuoteResponse `json:"quote,omitempty"`
-}
-
-type CreatePaymentAttemptParams struct {
-	CheckoutSessionID uuid.UUID
-	UserID            uuid.UUID
-	ExternalRef       string
-	ProviderID        string
-	ProviderReference string
-	Status            PaymentAttemptStatus
-	Amount            int64
-	Currency          string
-	Country           string
-	PaymentMethod     string
-	Operator          string
-	CustomerPhone     string
-	ProviderResponse  []byte
-	Metadata          map[string]string
-}
-
-type ApplyPaymentResultParams struct {
-	ExternalRef       string
-	ProviderID        string
-	ProviderReference string
-	Status            PaymentAttemptStatus
-	ProviderResponse  []byte
-	Metadata          map[string]string
+	CheckoutSessionID string `json:"checkout_session_id"`
+	TransactionID     string `json:"transaction_id"`
+	Provider          string `json:"provider"`
+	ProviderReference string `json:"provider_reference,omitempty"`
+	Status            string `json:"status"`
+	Amount            int64  `json:"amount"`
+	Currency          string `json:"currency"`
+	Country           string `json:"country"`
+	Network           string `json:"network"`
+	Phone             string `json:"phone"`
+	CustomerMessage   string `json:"customer_message,omitempty"`
 }

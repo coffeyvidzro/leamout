@@ -10,38 +10,54 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
-	modulepayment "github.com/cuffeyvidzro/leamout/internal/modules/payment"
-	paymentpricing "github.com/cuffeyvidzro/leamout/internal/payment/pricing"
-	paymentregistry "github.com/cuffeyvidzro/leamout/internal/payment/registry"
+	corepayment "github.com/cuffeyvidzro/leamout/internal/payment"
 	"github.com/google/uuid"
 )
 
 const clientSecretBytes = 32
 
-var ErrInvalidPaymentRequest = errors.New("invalid checkout payment request")
+var (
+	ErrInvalidCheckoutRequest = errors.New("invalid checkout request")
+	ErrInvalidPaymentRequest  = errors.New("invalid checkout payment request")
+)
 
-type PaymentStarter interface {
-	PredictCheckoutProvider(ctx context.Context, phoneNumber string) (*modulepayment.ProviderPrediction, error)
-	StartCheckoutPayment(ctx context.Context, params modulepayment.StartCheckoutPaymentParams) (*modulepayment.StartCheckoutPaymentResult, error)
-}
-
-type PricingQuoter interface {
-	Quote(req paymentpricing.Request) (*paymentpricing.Quote, error)
+type PaymentCharger interface {
+	Charge(ctx context.Context, payload corepayment.UnifiedPayload) (*corepayment.ChargeResult, error)
 }
 
 type Service struct {
 	repository     *Repository
-	paymentService PaymentStarter
-	pricingService PricingQuoter
-	webhookURLFor  func(provider string) string
+	paymentService PaymentCharger
 }
 
-func NewService(repository *Repository, paymentService PaymentStarter, webhookURLFor func(provider string) string) *Service {
-	return &Service{repository: repository, paymentService: paymentService, pricingService: paymentpricing.NewService(paymentregistry.PawaPayMVPFeeRules()), webhookURLFor: webhookURLFor}
+func NewService(repository *Repository, paymentService PaymentCharger) *Service {
+	return &Service{
+		repository:     repository,
+		paymentService: paymentService,
+	}
 }
 
 func (s *Service) Create(ctx context.Context, userID uuid.UUID, req CreateRequest) (*Session, error) {
+	if s.repository == nil {
+		return nil, errors.New("checkout repository is not configured")
+	}
+
+	if req.ExpiresAt.IsZero() {
+		return nil, fmt.Errorf("%w: expires_at is required", ErrInvalidCheckoutRequest)
+	}
+	if !req.ExpiresAt.After(time.Now().UTC()) {
+		return nil, fmt.Errorf("%w: expires_at must be in the future", ErrInvalidCheckoutRequest)
+	}
+	if req.Amount <= 0 {
+		return nil, fmt.Errorf("%w: amount must be greater than zero", ErrInvalidCheckoutRequest)
+	}
+	req.Currency = normalizeCurrency(req.Currency)
+	if len(req.Currency) != 3 {
+		return nil, fmt.Errorf("%w: currency must be a 3-letter ISO code", ErrInvalidCheckoutRequest)
+	}
+
 	clientSecret, err := newClientSecret()
 	if err != nil {
 		return nil, fmt.Errorf("create checkout client secret: %w", err)
@@ -51,6 +67,7 @@ func (s *Service) Create(ctx context.Context, userID uuid.UUID, req CreateReques
 	if err != nil {
 		return nil, err
 	}
+
 	session.ClientSecret = clientSecret
 	return session, nil
 }
@@ -64,19 +81,20 @@ func (s *Service) Get(ctx context.Context, userID, id uuid.UUID) (*Session, erro
 }
 
 func (s *Service) GetPublic(ctx context.Context, clientSecret string) (*Session, error) {
+	clientSecret = strings.TrimSpace(clientSecret)
+	if clientSecret == "" {
+		return nil, ErrNotFound
+	}
+
 	return s.repository.GetByClientSecretHash(ctx, HashClientSecret(clientSecret))
 }
 
 func (s *Service) Update(ctx context.Context, userID, id uuid.UUID, req UpdateRequest) (*Session, error) {
-	return s.repository.Update(ctx, userID, id, req)
-}
-
-func (s *Service) Quote(ctx context.Context, clientSecret string, req QuoteRequest) (*QuoteResponse, error) {
-	session, err := s.GetPublic(ctx, clientSecret)
-	if err != nil {
-		return nil, err
+	if req.ExpiresAt != nil && req.ExpiresAt.Before(time.Now().UTC()) {
+		return nil, fmt.Errorf("%w: expires_at must be in the future", ErrInvalidCheckoutRequest)
 	}
-	return s.quoteForSession(session, req)
+
+	return s.repository.Update(ctx, userID, id, req)
 }
 
 func (s *Service) Pay(ctx context.Context, clientSecret string, req PayRequest) (*PayResponse, error) {
@@ -89,109 +107,59 @@ func (s *Service) Pay(ctx context.Context, clientSecret string, req PayRequest) 
 		return nil, err
 	}
 
-	predictionPhone := predictPhoneNumber(req.Country, req.Phone)
-	prediction, err := s.paymentService.PredictCheckoutProvider(ctx, predictionPhone)
-	if err != nil {
-		return nil, fmt.Errorf("%w: could not predict mobile money provider: %v", ErrInvalidPaymentRequest, err)
-	}
-	if prediction == nil || strings.TrimSpace(prediction.ProviderCode) == "" {
-		return nil, fmt.Errorf("%w: could not predict mobile money provider", ErrInvalidPaymentRequest)
+	country := normalizeCountry(req.Country)
+	if country == "" {
+		return nil, fmt.Errorf("%w: unsupported country %q", ErrInvalidPaymentRequest, req.Country)
 	}
 
-	marketRule, ok := paymentregistry.FindPawaPayMVPRuleByProviderCode(prediction.ProviderCode)
-	if !ok {
-		return nil, fmt.Errorf("%w: predicted provider %s is not available for this checkout", ErrInvalidPaymentRequest, prediction.ProviderCode)
-	}
-	if !countryMatches(req.Country, marketRule) {
-		return nil, fmt.Errorf("%w: phone number belongs to %s, not %s", ErrInvalidPaymentRequest, marketRule.CountryName, strings.ToUpper(strings.TrimSpace(req.Country)))
+	network := normalizeNetwork(req.Network)
+	if network == "" {
+		return nil, fmt.Errorf("%w: network is required", ErrInvalidPaymentRequest)
 	}
 
-	quote, err := s.quoteForRule(session, marketRule, req.Intelligence)
-	if err != nil {
-		return nil, err
+	currency := normalizeCurrency(session.Currency)
+	phone := normalizePhone(country, req.Phone)
+	if phone == "" {
+		return nil, fmt.Errorf("%w: phone is required", ErrInvalidPaymentRequest)
 	}
 
-	phoneForPayment := strings.TrimSpace(prediction.PhoneNumber)
-	if phoneForPayment == "" {
-		phoneForPayment = strings.TrimPrefix(predictionPhone, "+")
-	}
-
+	transactionID := uuid.NewString()
 	metadata := stringMetadata(session.Metadata)
-	addQuoteMetadata(metadata, quote, req.Intelligence)
-	metadata["pawapay_provider"] = marketRule.ProviderCode
-	metadata["predicted_provider"] = prediction.ProviderCode
-	metadata["predicted_country"] = prediction.Country
-	metadata["predicted_phone_number"] = phoneForPayment
-	metadata["selected_operator"] = strings.TrimSpace(req.Operator)
-	metadata["decimal_mode"] = marketRule.DecimalMode
-	metadata["min_amount"] = strconv.FormatInt(marketRule.MinAmountMinor, 10)
-	metadata["max_amount"] = strconv.FormatInt(marketRule.MaxAmountMinor, 10)
+	addPaymentMetadata(metadata, session, req, country, network, phone)
 
-	result, err := s.paymentService.StartCheckoutPayment(ctx, modulepayment.StartCheckoutPaymentParams{
-		CheckoutID:      session.ID,
-		UserID:          session.UserID,
-		CustomerID:      session.CustomerID,
-		Amount:          quote.PayableAmount,
-		FeeAmount:       quote.ProcessingFee,
-		Currency:        quote.Currency,
-		Country:         quote.Country,
-		Phone:           phoneForPayment,
-		Operator:        quote.Operator,
-		CustomerName:    req.CustomerName,
-		CustomerEmail:   req.CustomerEmail,
-		Label:           labelOrDefault(session.Label),
-		ReturnURL:       returnURL(session),
-		Metadata:        metadata,
-		ProviderOptions: map[string]any{"provider": marketRule.ProviderCode},
+	result, err := s.paymentService.Charge(ctx, corepayment.UnifiedPayload{
+		TransactionID: transactionID,
+		Country:       country,
+		Network:       network,
+		PhoneNumber:   phone,
+		Amount:        strconv.FormatInt(session.Amount, 10),
+		Currency:      currency,
+		Metadata:      metadata,
 	})
-	if err != nil {
-		return nil, err
-	}
-	if result.Status == modulepayment.StatusFailed || result.Status == modulepayment.StatusVoided {
-		return nil, fmt.Errorf("%w: %s", ErrInvalidPaymentRequest, rejectedPaymentMessage(result))
-	}
-
-	return &PayResponse{CheckoutSessionID: session.ID.String(), ExternalRef: result.ExternalRef, ProviderID: result.ProviderID, ProviderReference: result.ProviderReference, Status: string(result.Status), NextActionType: result.NextActionType, NextActionURL: result.NextActionURL, CustomerMessage: result.CustomerMessage, Quote: quote}, nil
-}
-
-func (s *Service) Confirm(ctx context.Context, clientSecret string) (*Session, error) {
-	return s.repository.ConfirmByClientSecretHash(ctx, HashClientSecret(clientSecret))
-}
-
-func (s *Service) quoteForSession(session *Session, req QuoteRequest) (*QuoteResponse, error) {
-	marketRule, ok := paymentregistry.FindPawaPayMVPRule(req.Country, session.Currency, req.Operator)
-	if !ok {
-		return nil, fmt.Errorf("%w: unsupported country/operator %s/%s/%s", ErrInvalidPaymentRequest, req.Country, session.Currency, req.Operator)
-	}
-	return s.quoteForRule(session, marketRule, req.Intelligence)
-}
-
-func (s *Service) quoteForRule(session *Session, marketRule paymentregistry.PawaPayMarketRule, intelligence RequestIntelligence) (*QuoteResponse, error) {
-	if session == nil {
-		return nil, ErrNotFound
-	}
-	if s.pricingService == nil {
-		return nil, errors.New("payment pricing service is not configured")
-	}
-	if strings.ToUpper(strings.TrimSpace(session.Currency)) != marketRule.Currency {
-		return nil, fmt.Errorf("%w: checkout currency %s does not match predicted provider currency %s", ErrInvalidPaymentRequest, session.Currency, marketRule.Currency)
-	}
-	if !marketRule.FeeConfigured {
-		return nil, fmt.Errorf("%w: fee not configured for %s/%s/%s", ErrInvalidPaymentRequest, marketRule.Country, marketRule.Currency, marketRule.Operator)
-	}
-	if !marketRule.ValidateAmount(session.Amount) {
-		return nil, fmt.Errorf("%w: amount %d outside allowed range %d..%d for %s/%s/%s", ErrInvalidPaymentRequest, session.Amount, marketRule.MinAmountMinor, marketRule.MaxAmountMinor, marketRule.Country, marketRule.Currency, marketRule.Operator)
-	}
-
-	quote, err := s.pricingService.Quote(paymentpricing.Request{BaseAmount: session.Amount, Country: marketRule.Country, Currency: marketRule.Currency, Method: marketRule.Method, Operator: marketRule.Operator})
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidPaymentRequest, err)
 	}
+	if result == nil {
+		return nil, errors.New("payment service returned empty result")
+	}
 
-	detectedCountry := strings.ToUpper(strings.TrimSpace(intelligence.DetectedCountry))
-	countryMismatch := detectedCountry != "" && detectedCountry != quote.Country
+	return &PayResponse{
+		CheckoutSessionID: session.ID.String(),
+		TransactionID:     firstNonEmpty(result.TransactionID, transactionID),
+		Provider:          string(result.Provider),
+		ProviderReference: result.ProviderReference,
+		Status:            string(result.Status),
+		Amount:            session.Amount,
+		Currency:          currency,
+		Country:           country,
+		Network:           network,
+		Phone:             phone,
+		CustomerMessage:   result.Message,
+	}, nil
+}
 
-	return &QuoteResponse{CheckoutSessionID: session.ID.String(), Country: quote.Country, Currency: quote.Currency, Method: quote.Method, Operator: quote.Operator, BaseAmount: quote.BaseAmount, ProcessingFee: quote.ProcessingFee, PayableAmount: quote.PayableAmount, FeeRateBps: quote.FeeRateBps, FeeFixedAmount: quote.FeeFixedAmount, FeeMode: quote.FeeMode, DetectedCountry: detectedCountry, CountryMismatch: countryMismatch}, nil
+func (s *Service) CompletePaidCheckout(ctx context.Context, checkoutID uuid.UUID) error {
+	return s.repository.CompletePaidCheckout(ctx, checkoutID)
 }
 
 func HashClientSecret(clientSecret string) string {
@@ -207,26 +175,6 @@ func newClientSecret() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(bytes), nil
 }
 
-func labelOrDefault(label *string) string {
-	if label == nil || strings.TrimSpace(*label) == "" {
-		return "Leamout payment"
-	}
-	return strings.TrimSpace(*label)
-}
-
-func returnURL(session *Session) string {
-	if session == nil {
-		return ""
-	}
-	if session.ReturnURL != nil && strings.TrimSpace(*session.ReturnURL) != "" {
-		return strings.TrimSpace(*session.ReturnURL)
-	}
-	if session.SuccessURL != nil && strings.TrimSpace(*session.SuccessURL) != "" {
-		return strings.TrimSpace(*session.SuccessURL)
-	}
-	return ""
-}
-
 func stringMetadata(metadata map[string]any) map[string]string {
 	out := make(map[string]string)
 	for key, value := range metadata {
@@ -239,81 +187,159 @@ func stringMetadata(metadata map[string]any) map[string]string {
 	return out
 }
 
-func addQuoteMetadata(metadata map[string]string, quote *QuoteResponse, intelligence RequestIntelligence) {
-	if metadata == nil || quote == nil {
+func addPaymentMetadata(metadata map[string]string, session *Session, req PayRequest, country, network, phone string) {
+	if metadata == nil || session == nil {
 		return
 	}
-	metadata["base_amount"] = strconv.FormatInt(quote.BaseAmount, 10)
-	metadata["processing_fee"] = strconv.FormatInt(quote.ProcessingFee, 10)
-	metadata["payable_amount"] = strconv.FormatInt(quote.PayableAmount, 10)
-	metadata["fee_rate_bps"] = strconv.FormatInt(quote.FeeRateBps, 10)
-	metadata["fee_fixed_amount"] = strconv.FormatInt(quote.FeeFixedAmount, 10)
-	metadata["fee_mode"] = quote.FeeMode
-	metadata["payment_method"] = quote.Method
-	metadata["operator"] = quote.Operator
-	if strings.TrimSpace(intelligence.DetectedCountry) != "" {
-		metadata["detected_country"] = strings.ToUpper(strings.TrimSpace(intelligence.DetectedCountry))
+
+	metadata["checkout_session_id"] = session.ID.String()
+	metadata["checkout_user_id"] = session.UserID.String()
+	metadata["checkout_mode"] = string(session.Mode)
+	metadata["checkout_source"] = string(session.Source)
+	metadata["checkout_amount"] = strconv.FormatInt(session.Amount, 10)
+	metadata["checkout_currency"] = normalizeCurrency(session.Currency)
+	metadata["checkout_country"] = country
+	metadata["checkout_network"] = network
+	metadata["customer_phone"] = phone
+
+	if session.CustomerID != nil {
+		metadata["checkout_customer_id"] = session.CustomerID.String()
 	}
-	if strings.TrimSpace(intelligence.DetectedSource) != "" {
-		metadata["detected_country_source"] = strings.TrimSpace(intelligence.DetectedSource)
+	if session.SubscriptionID != nil {
+		metadata["checkout_subscription_id"] = session.SubscriptionID.String()
 	}
-	if strings.TrimSpace(intelligence.ClientIP) != "" {
-		metadata["client_ip"] = strings.TrimSpace(intelligence.ClientIP)
+	if session.Label != nil && strings.TrimSpace(*session.Label) != "" {
+		metadata["checkout_label"] = strings.TrimSpace(*session.Label)
 	}
-	if quote.CountryMismatch {
-		metadata["country_mismatch"] = "true"
+	if name := strings.TrimSpace(req.CustomerName); name != "" {
+		metadata["customer_name"] = name
+	}
+	if email := strings.TrimSpace(req.CustomerEmail); email != "" {
+		metadata["customer_email"] = email
+	}
+	if detectedCountry := normalizeCountry(req.Intelligence.DetectedCountry); detectedCountry != "" {
+		metadata["detected_country"] = detectedCountry
+	}
+	if source := strings.TrimSpace(req.Intelligence.DetectedSource); source != "" {
+		metadata["detected_country_source"] = source
+	}
+	if ip := strings.TrimSpace(req.Intelligence.ClientIP); ip != "" {
+		metadata["client_ip"] = ip
 	}
 }
 
-func predictPhoneNumber(country, phone string) string {
-	country = strings.ToUpper(strings.TrimSpace(country))
-	phone = strings.TrimSpace(phone)
-	if strings.HasPrefix(phone, "+") {
-		return phone
+func normalizeCurrency(value string) string {
+	return strings.ToUpper(strings.TrimSpace(value))
+}
+
+func normalizeCountry(value string) string {
+	value = strings.ToUpper(strings.TrimSpace(value))
+	value = strings.ReplaceAll(value, "-", " ")
+	value = strings.Join(strings.Fields(value), " ")
+
+	switch value {
+	case "BEN", "BJ", "BENIN":
+		return "BEN"
+	case "BFA", "BF", "BURKINA FASO":
+		return "BFA"
+	case "CMR", "CM", "CAMEROON":
+		return "CMR"
+	case "GHA", "GH", "GHANA":
+		return "GHA"
+	case "CIV", "CI", "IVORY COAST", "COTE DIVOIRE", "CÔTE DIVOIRE", "COTE D'IVOIRE", "CÔTE D'IVOIRE":
+		return "CIV"
+	case "NGA", "NG", "NIGERIA":
+		return "NGA"
+	case "SEN", "SN", "SENEGAL":
+		return "SEN"
+	case "SLE", "SL", "SIERRA LEONE":
+		return "SLE"
+	default:
+		return ""
 	}
+}
+
+func normalizeNetwork(value string) string {
+	value = strings.ToUpper(strings.TrimSpace(value))
+	value = strings.ReplaceAll(value, "-", "")
+	value = strings.ReplaceAll(value, "_", "")
+	value = strings.ReplaceAll(value, " ", "")
+
+	switch value {
+	case "MTN", "MTNMOMO", "MOMO":
+		return "MTN"
+	case "MOOV":
+		return "MOOV"
+	case "ORANGE":
+		return "ORANGE"
+	case "FREE":
+		return "FREE"
+	case "TELECEL", "VODAFONE":
+		return "TELECEL"
+	case "AIRTELTIGO", "AIRTELTIGOMONEY", "AT", "ATMONEY":
+		return "AIRTELTIGO"
+	default:
+		return value
+	}
+}
+
+func normalizePhone(country, phone string) string {
+	phone = strings.TrimSpace(phone)
 	phone = strings.ReplaceAll(phone, " ", "")
 	phone = strings.ReplaceAll(phone, "-", "")
 	phone = strings.ReplaceAll(phone, "(", "")
 	phone = strings.ReplaceAll(phone, ")", "")
 	phone = strings.TrimPrefix(phone, "+")
-	if phone == "" {
-		return ""
-	}
+
 	if strings.HasPrefix(phone, "00") && len(phone) > 2 {
 		phone = phone[2:]
 	}
-	if prefix := phonePrefixForCountry(country); prefix != "" {
-		if phone == prefix || strings.HasPrefix(phone, prefix) {
-			return "+" + phone
-		}
-		if strings.HasPrefix(phone, "0") && len(phone) > 1 {
-			return "+" + prefix + phone[1:]
-		}
+
+	prefix := phonePrefixForCountry(country)
+	if prefix == "" || phone == "" {
+		return phone
 	}
-	return phone
+
+	if strings.HasPrefix(phone, prefix) {
+		return phone
+	}
+
+	if strings.HasPrefix(phone, "0") && len(phone) > 1 {
+		return prefix + phone[1:]
+	}
+
+	return prefix + phone
 }
 
 func phonePrefixForCountry(country string) string {
-	country = strings.ToUpper(strings.TrimSpace(country))
-	for _, rule := range paymentregistry.PawaPayMVPRules() {
-		if rule.Country == country || rule.CountryAlpha3 == country {
-			return strings.TrimSpace(rule.PhonePrefix)
+	switch normalizeCountry(country) {
+	case "BEN":
+		return "229"
+	case "BFA":
+		return "226"
+	case "CMR":
+		return "237"
+	case "GHA":
+		return "233"
+	case "CIV":
+		return "225"
+	case "NGA":
+		return "234"
+	case "SEN":
+		return "221"
+	case "SLE":
+		return "232"
+	default:
+		return ""
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
 		}
 	}
 	return ""
-}
-
-func countryMatches(selectedCountry string, marketRule paymentregistry.PawaPayMarketRule) bool {
-	selectedCountry = strings.ToUpper(strings.TrimSpace(selectedCountry))
-	return selectedCountry == "" || selectedCountry == marketRule.Country || selectedCountry == marketRule.CountryAlpha3
-}
-
-func rejectedPaymentMessage(result *modulepayment.StartCheckoutPaymentResult) string {
-	if result == nil {
-		return "payment request was rejected"
-	}
-	if message := strings.TrimSpace(result.CustomerMessage); message != "" {
-		return message
-	}
-	return "payment request was rejected"
 }

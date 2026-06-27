@@ -6,6 +6,9 @@ import (
 	"github.com/arcjet/arcjet-go"
 	"github.com/cuffeyvidzro/leamout/internal/config"
 	"github.com/cuffeyvidzro/leamout/internal/modules/auth/oauth"
+	"github.com/cuffeyvidzro/leamout/internal/payment/provider/pawapay"
+	"github.com/cuffeyvidzro/leamout/internal/payment/provider/tola"
+	paymentwebhook "github.com/cuffeyvidzro/leamout/internal/payment/webhook"
 	"github.com/cuffeyvidzro/leamout/internal/platform/geoip"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
@@ -51,4 +54,18 @@ func (s *Server) oauthRegistry() *oauth.Registry {
 			RedirectURL:  s.cfg.APIBaseURL + "/v1/auth/github/callback",
 		}),
 	)
+}
+
+func (s *Server) paymentWebhookRegistry() (*paymentwebhook.Registry, error) {
+	registry := paymentwebhook.NewRegistry()
+
+	if err := registry.Register(pawapay.NewWebhookHandler(s.log)); err != nil {
+		return nil, err
+	}
+
+	if err := registry.Register(tola.NewWebhookHandler(s.log)); err != nil {
+		return nil, err
+	}
+
+	return registry, nil
 }

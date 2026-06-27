@@ -50,6 +50,7 @@ type Config struct {
 
 	Arkesel ProviderConfig `envPrefix:"ARKESEL_"`
 	PawaPay ProviderConfig `envPrefix:"PAWAPAY_"`
+	Tola    ProviderConfig `envPrefix:"TOLA_"`
 }
 
 func Load() (*Config, error) {

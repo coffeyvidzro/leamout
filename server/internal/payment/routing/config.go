@@ -2,221 +2,338 @@ package routing
 
 import (
 	"fmt"
-	"os"
-	"sort"
 	"strings"
 
-	"github.com/cuffeyvidzro/leamout/internal/payment/provider"
-	paymentregistry "github.com/cuffeyvidzro/leamout/internal/payment/registry"
+	"github.com/cuffeyvidzro/leamout/internal/payment"
 )
-
-const (
-	envAllowFallback      = "PAYMENT_ROUTING_ALLOW_FALLBACK"
-	envStrictCapabilities = "PAYMENT_ROUTING_STRICT_CAPABILITIES"
-)
-
-type Config struct {
-	EnabledProviders   []provider.ID `json:"enabled_providers"`
-	DefaultProvider    provider.ID   `json:"default_provider,omitempty"`
-	Routes             []Route       `json:"routes"`
-	AllowFallback      bool          `json:"allow_fallback"`
-	StrictCapabilities bool          `json:"strict_capabilities"`
-}
 
 type Route struct {
-	Country   string                 `json:"country"`
-	Currency  string                 `json:"currency"`
-	Method    provider.PaymentMethod `json:"method"`
-	Providers []provider.ID          `json:"providers"`
+	Country  string
+	Network  string
+	Currency string
+
+	Provider payment.ProviderName
+	Operator string
+
+	Priority int
+	Enabled  bool
 }
 
-func DefaultConfig() Config {
-	return Config{
-		EnabledProviders:   []provider.ID{provider.ProviderPawaPay},
-		DefaultProvider:    provider.ProviderPawaPay,
-		Routes:             pawaPayRegistryRoutes(),
-		AllowFallback:      false,
-		StrictCapabilities: true,
-	}
+type Config struct {
+	routes map[string][]Route
 }
 
-func LoadConfigFromEnv() Config {
-	return ConfigFromEnv(os.Environ())
+func NewConfig(routes []Route) *Config {
+	cfg := &Config{
+		routes: make(map[string][]Route),
+	}
+
+	for _, route := range routes {
+		cfg.AddRoute(route)
+	}
+
+	return cfg
 }
 
-func ConfigFromEnv(environ []string) Config {
-	cfg := DefaultConfig()
-	env := envMap(environ)
+func NewDefaultConfig() *Config {
+	return NewConfig([]Route{
+		// Benin - XOF
+		// pawaPay supported. Tola not added because Benin is not in the Tola active country list.
+		{
+			Country:  "BEN",
+			Network:  "MOOV",
+			Currency: "XOF",
+			Provider: payment.ProviderPawaPay,
+			Operator: "MOOV_BEN",
+			Priority: 1,
+			Enabled:  true,
+		},
+		{
+			Country:  "BEN",
+			Network:  "MTN",
+			Currency: "XOF",
+			Provider: payment.ProviderPawaPay,
+			Operator: "MTN_MOMO_BEN",
+			Priority: 1,
+			Enabled:  true,
+		},
 
-	// MVP is intentionally locked to PawaPay. Env can only tune behavior flags;
-	// it cannot switch providers or introduce fallback routes yet.
-	cfg.AllowFallback = false
-	cfg.StrictCapabilities = parseBoolDefault(env[envStrictCapabilities], cfg.StrictCapabilities)
-	if parseBoolDefault(env[envAllowFallback], false) {
-		cfg.AllowFallback = false
-	}
+		// Burkina Faso - XOF
+		{
+			Country:  "BFA",
+			Network:  "MOOV",
+			Currency: "XOF",
+			Provider: payment.ProviderPawaPay,
+			Operator: "MOOV_BFA",
+			Priority: 1,
+			Enabled:  true,
+		},
+		{
+			Country:  "BFA",
+			Network:  "MOOV",
+			Currency: "XOF",
+			Provider: payment.ProviderTola,
+			Operator: "BURKINA_FASO.MOOV",
+			Priority: 2,
+			Enabled:  true,
+		},
 
-	return cfg.normalized()
-}
+		// Cameroon - XAF
+		{
+			Country:  "CMR",
+			Network:  "MTN",
+			Currency: "XAF",
+			Provider: payment.ProviderPawaPay,
+			Operator: "MTN_MOMO_CMR",
+			Priority: 1,
+			Enabled:  true,
+		},
+		{
+			Country:  "CMR",
+			Network:  "MTN",
+			Currency: "XAF",
+			Provider: payment.ProviderTola,
+			Operator: "CAMEROON.MTN",
+			Priority: 2,
+			Enabled:  true,
+		},
+		{
+			Country:  "CMR",
+			Network:  "ORANGE",
+			Currency: "XAF",
+			Provider: payment.ProviderPawaPay,
+			Operator: "ORANGE_CMR",
+			Priority: 1,
+			Enabled:  true,
+		},
+		{
+			Country:  "CMR",
+			Network:  "ORANGE",
+			Currency: "XAF",
+			Provider: payment.ProviderTola,
+			Operator: "CAMEROON.ORANGE",
+			Priority: 2,
+			Enabled:  true,
+		},
 
-func (c Config) normalized() Config {
-	out := c
-	out.EnabledProviders = []provider.ID{provider.ProviderPawaPay}
-	out.DefaultProvider = provider.ProviderPawaPay
-	out.AllowFallback = false
+		// Ghana - GHS
+		{
+			Country:  "GHA",
+			Network:  "AIRTELTIGO",
+			Currency: "GHS",
+			Provider: payment.ProviderPawaPay,
+			Operator: "AIRTELTIGO_GHA",
+			Priority: 1,
+			Enabled:  true,
+		},
+		{
+			Country:  "GHA",
+			Network:  "AIRTELTIGO",
+			Currency: "GHS",
+			Provider: payment.ProviderTola,
+			Operator: "GHANA.AIRTELTIGO",
+			Priority: 2,
+			Enabled:  true,
+		},
+		{
+			Country:  "GHA",
+			Network:  "MTN",
+			Currency: "GHS",
+			Provider: payment.ProviderPawaPay,
+			Operator: "MTN_MOMO_GHA",
+			Priority: 1,
+			Enabled:  true,
+		},
+		{
+			Country:  "GHA",
+			Network:  "MTN",
+			Currency: "GHS",
+			Provider: payment.ProviderTola,
+			Operator: "GHANA.MTN",
+			Priority: 2,
+			Enabled:  true,
+		},
+		{
+			Country:  "GHA",
+			Network:  "TELECEL",
+			Currency: "GHS",
+			Provider: payment.ProviderPawaPay,
+			Operator: "VODAFONE_GHA",
+			Priority: 1,
+			Enabled:  true,
+		},
+		{
+			Country:  "GHA",
+			Network:  "TELECEL",
+			Currency: "GHS",
+			Provider: payment.ProviderTola,
+			Operator: "GHANA.TELECEL",
+			Priority: 2,
+			Enabled:  true,
+		},
 
-	out.Routes = make([]Route, 0, len(c.Routes))
-	seenRoutes := map[string]struct{}{}
-	for _, route := range c.Routes {
-		route = route.normalized()
-		if route.Country == "" || route.Currency == "" || route.Method == "" {
-			continue
-		}
-		if _, exists := seenRoutes[route.key()]; exists {
-			continue
-		}
-		seenRoutes[route.key()] = struct{}{}
-		out.Routes = append(out.Routes, route)
-	}
-	if len(out.Routes) == 0 {
-		out.Routes = pawaPayRegistryRoutes()
-	}
+		// Ivory Coast - XOF
+		{
+			Country:  "CIV",
+			Network:  "MOOV",
+			Currency: "XOF",
+			Provider: payment.ProviderPawaPay,
+			Operator: "MOOV_CIV",
+			Priority: 1,
+			Enabled:  true,
+		},
+		{
+			Country:  "CIV",
+			Network:  "MOOV",
+			Currency: "XOF",
+			Provider: payment.ProviderTola,
+			Operator: "IVORY_COAST.MOOV",
+			Priority: 2,
+			Enabled:  true,
+		},
+		{
+			Country:  "CIV",
+			Network:  "MTN",
+			Currency: "XOF",
+			Provider: payment.ProviderPawaPay,
+			Operator: "MTN_MOMO_CIV",
+			Priority: 1,
+			Enabled:  true,
+		},
+		{
+			Country:  "CIV",
+			Network:  "MTN",
+			Currency: "XOF",
+			Provider: payment.ProviderTola,
+			Operator: "IVORY_COAST.MTN",
+			Priority: 2,
+			Enabled:  true,
+		},
+		{
+			Country:  "CIV",
+			Network:  "ORANGE",
+			Currency: "XOF",
+			Provider: payment.ProviderPawaPay,
+			Operator: "ORANGE_CIV",
+			Priority: 1,
+			Enabled:  true,
+		},
+		{
+			Country:  "CIV",
+			Network:  "ORANGE",
+			Currency: "XOF",
+			Provider: payment.ProviderTola,
+			Operator: "IVORY_COAST.ORANGE",
+			Priority: 2,
+			Enabled:  true,
+		},
 
-	sort.SliceStable(out.Routes, func(i, j int) bool {
-		return out.Routes[i].key() < out.Routes[j].key()
+		// Senegal - XOF
+		{
+			Country:  "SEN",
+			Network:  "FREE",
+			Currency: "XOF",
+			Provider: payment.ProviderPawaPay,
+			Operator: "FREE_SEN",
+			Priority: 1,
+			Enabled:  true,
+		},
+		{
+			Country:  "SEN",
+			Network:  "FREE",
+			Currency: "XOF",
+			Provider: payment.ProviderTola,
+			Operator: "SENEGAL.FREE",
+			Priority: 2,
+			Enabled:  true,
+		},
+		{
+			Country:  "SEN",
+			Network:  "ORANGE",
+			Currency: "XOF",
+			Provider: payment.ProviderPawaPay,
+			Operator: "ORANGE_SEN",
+			Priority: 1,
+			Enabled:  true,
+		},
+		{
+			Country:  "SEN",
+			Network:  "ORANGE",
+			Currency: "XOF",
+			Provider: payment.ProviderTola,
+			Operator: "SENEGAL.ORANGE",
+			Priority: 2,
+			Enabled:  true,
+		},
+
+		// Sierra Leone - SLE
+		{
+			Country:  "SLE",
+			Network:  "ORANGE",
+			Currency: "SLE",
+			Provider: payment.ProviderPawaPay,
+			Operator: "ORANGE_SLE",
+			Priority: 1,
+			Enabled:  true,
+		},
+		{
+			Country:  "SLE",
+			Network:  "ORANGE",
+			Currency: "SLE",
+			Provider: payment.ProviderTola,
+			Operator: "SIERRA_LEONE.ORANGE",
+			Priority: 2,
+			Enabled:  true,
+		},
+
+		// Nigeria intentionally not added yet.
+		// pawaPay support was listed, but the uploaded pawaPay provider dump does not include Nigeria operator codes.
+		// Tola's public active-country list does not include Nigeria.
 	})
-
-	return out
 }
 
-func (c Config) Validate() error {
-	if len(c.EnabledProviders) == 0 {
-		return fmt.Errorf("payment routing has no enabled providers")
-	}
-	if c.DefaultProvider != provider.ProviderPawaPay {
-		return fmt.Errorf("default payment provider must be %q for MVP", provider.ProviderPawaPay)
-	}
-	for _, id := range c.EnabledProviders {
-		if id != provider.ProviderPawaPay {
-			return fmt.Errorf("payment provider %q is not allowed in MVP", id)
-		}
-	}
-	for _, route := range c.Routes {
-		route = route.normalized()
-		if route.Country == "" {
-			return fmt.Errorf("payment route country is empty")
-		}
-		if route.Currency == "" {
-			return fmt.Errorf("payment route currency is empty")
-		}
-		if route.Method == "" {
-			return fmt.Errorf("payment route method is empty")
-		}
-		for _, id := range route.Providers {
-			if id != provider.ProviderPawaPay {
-				return fmt.Errorf("payment route %s uses non-MVP provider %q", route.key(), id)
-			}
-		}
-	}
-	return nil
-}
+func (c *Config) AddRoute(route Route) {
+	route.Country = normalize(route.Country)
+	route.Network = normalize(route.Network)
+	route.Currency = normalize(route.Currency)
+	route.Operator = strings.TrimSpace(route.Operator)
 
-func (c Config) IsProviderEnabled(id provider.ID) bool {
-	return normalizeProviderID(string(id)) == provider.ProviderPawaPay
-}
-
-func (c Config) RouteFor(req RouteRequest) (Route, bool) {
-	req = req.normalized()
-	key := routeKey(req.Country, req.Currency, req.Method)
-	for _, route := range c.Routes {
-		route = route.normalized()
-		if route.key() == key {
-			return route, true
-		}
-	}
-	return Route{}, false
-}
-
-func (r Route) normalized() Route {
-	out := r
-	out.Country = normalizeCountry(out.Country)
-	out.Currency = normalizeCurrency(out.Currency)
-	out.Method = normalizeMethod(out.Method)
-	out.Providers = []provider.ID{provider.ProviderPawaPay}
-	return out
-}
-
-func (r Route) key() string {
-	return routeKey(r.Country, r.Currency, r.Method)
-}
-
-func routeKey(country, currency string, method provider.PaymentMethod) string {
-	return normalizeCountry(country) + "_" + normalizeCurrency(currency) + "_" + strings.ToUpper(string(normalizeMethod(method)))
-}
-
-func pawaPayRegistryRoutes() []Route {
-	rules := paymentregistry.PawaPayMVPRules()
-	routes := make([]Route, 0, len(rules))
-	seenRoutes := map[string]struct{}{}
-
-	for _, rule := range rules {
-		route := Route{
-			Country:   rule.Country,
-			Currency:  rule.Currency,
-			Method:    provider.PaymentMethod(rule.Method),
-			Providers: []provider.ID{provider.ProviderPawaPay},
-		}.normalized()
-		if route.Country == "" || route.Currency == "" || route.Method == "" {
-			continue
-		}
-		if _, exists := seenRoutes[route.key()]; exists {
-			continue
-		}
-		seenRoutes[route.key()] = struct{}{}
-		routes = append(routes, route)
+	if route.Priority <= 0 {
+		route.Priority = 100
 	}
 
-	sort.SliceStable(routes, func(i, j int) bool {
-		return routes[i].key() < routes[j].key()
-	})
-	return routes
+	key := routeKey(route.Country, route.Network, route.Currency)
+	c.routes[key] = append(c.routes[key], route)
 }
 
-func envMap(environ []string) map[string]string {
-	out := make(map[string]string, len(environ))
-	for _, item := range environ {
-		parts := strings.SplitN(item, "=", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		out[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+func (c *Config) Lookup(country, network, currency string) ([]Route, error) {
+	if c == nil {
+		return nil, fmt.Errorf("missing routing config")
 	}
-	return out
-}
 
-func normalizeProviderID(raw string) provider.ID {
-	return provider.ID(strings.ToLower(strings.TrimSpace(raw)))
-}
+	country = normalize(country)
+	network = normalize(network)
+	currency = normalize(currency)
 
-func normalizeCountry(raw string) string {
-	return strings.ToUpper(strings.TrimSpace(raw))
-}
+	key := routeKey(country, network, currency)
 
-func normalizeCurrency(raw string) string {
-	return strings.ToUpper(strings.TrimSpace(raw))
-}
-
-func normalizeMethod(method provider.PaymentMethod) provider.PaymentMethod {
-	return provider.PaymentMethod(strings.ToLower(strings.TrimSpace(string(method))))
-}
-
-func parseBoolDefault(raw string, fallback bool) bool {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "true", "1", "yes", "y", "on":
-		return true
-	case "false", "0", "no", "n", "off":
-		return false
-	default:
-		return fallback
+	routes, ok := c.routes[key]
+	if !ok || len(routes) == 0 {
+		return nil, fmt.Errorf(
+			"unsupported payment route: country=%s network=%s currency=%s",
+			country,
+			network,
+			currency,
+		)
 	}
+
+	return routes, nil
+}
+
+func routeKey(country, network, currency string) string {
+	return normalize(country) + ":" + normalize(network) + ":" + normalize(currency)
+}
+
+func normalize(value string) string {
+	return strings.ToUpper(strings.TrimSpace(value))
 }

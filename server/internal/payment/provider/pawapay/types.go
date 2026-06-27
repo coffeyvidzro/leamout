@@ -1,88 +1,70 @@
 package pawapay
 
-type PawaStatus string
-
-const (
-	PawaStatusAccepted         PawaStatus = "ACCEPTED"
-	PawaStatusRejected         PawaStatus = "REJECTED"
-	PawaStatusDuplicateIgnored PawaStatus = "DUPLICATE_IGNORED"
-
-	PawaStatusCompleted        PawaStatus = "COMPLETED"
-	PawaStatusFailed           PawaStatus = "FAILED"
-	PawaStatusProcessing       PawaStatus = "PROCESSING"
-	PawaStatusEnqueued         PawaStatus = "ENQUEUED"
-	PawaStatusInReconciliation PawaStatus = "IN_RECONCILIATION"
-
-	PawaStatusFound    PawaStatus = "FOUND"
-	PawaStatusNotFound PawaStatus = "NOT_FOUND"
+import (
+	"fmt"
+	"time"
 )
 
-type PawaNextStep string
-
 const (
-	PawaNextStepRedirectToAuthURL PawaNextStep = "REDIRECT_TO_AUTH_URL"
+	payerTypeMMO     = "MMO"
+	depositAccepted  = "ACCEPTED"
+	depositRejected  = "REJECTED"
+	depositDuplicate = "DUPLICATE_IGNORED"
 )
 
-type PawaDepositRequest struct {
-	DepositID            string          `json:"depositId"`
-	Payer                PawaParty       `json:"payer"`
-	Amount               string          `json:"amount"`
-	Currency             string          `json:"currency"`
-	ClientReferenceID    string          `json:"clientReferenceId,omitempty"`
-	CustomerMessage      string          `json:"customerMessage,omitempty"`
-	SuccessfulURL        string          `json:"successfulUrl,omitempty"`
-	FailedURL            string          `json:"failedUrl,omitempty"`
-	PreAuthorisationCode string          `json:"preAuthorisationCode,omitempty"`
-	Metadata             []PawaMetadata `json:"metadata,omitempty"`
+type DepositRequest struct {
+	DepositID string   `json:"depositId"`
+	Amount    string   `json:"amount"`
+	Currency  string   `json:"currency"`
+	Payer     PayerObj `json:"payer"`
+
+	ClientReferenceID string              `json:"clientReferenceId,omitempty"`
+	CustomerMessage   string              `json:"customerMessage,omitempty"`
+	Metadata          []map[string]string `json:"metadata,omitempty"`
 }
 
-type PawaParty struct {
-	Type           string             `json:"type"`
-	AccountDetails PawaAccountDetails `json:"accountDetails"`
+type PayerObj struct {
+	Type           string     `json:"type"`
+	AccountDetails AccountObj `json:"accountDetails"`
 }
 
-type PawaAccountDetails struct {
+type AccountObj struct {
 	PhoneNumber string `json:"phoneNumber"`
-	Provider    string `json:"provider,omitempty"`
+	Provider    string `json:"provider"`
 }
 
-type PawaMetadata map[string]any
-
-type PawaFailureReason struct {
-	FailureCode    string `json:"failureCode,omitempty"`
-	FailureMessage string `json:"failureMessage,omitempty"`
+type DepositResponse struct {
+	DepositID     string         `json:"depositId"`
+	Status        string         `json:"status"`
+	Created       time.Time      `json:"created,omitempty"`
+	FailureReason *FailureReason `json:"failureReason,omitempty"`
 }
 
-type PawaDepositResponse struct {
-	DepositID             string            `json:"depositId"`
-	Status                string            `json:"status"`
-	NextStep              string            `json:"nextStep,omitempty"`
-	Amount                string            `json:"amount,omitempty"`
-	Currency              string            `json:"currency,omitempty"`
-	Country               string            `json:"country,omitempty"`
-	Payer                 *PawaParty        `json:"payer,omitempty"`
-	CustomerMessage       string            `json:"customerMessage,omitempty"`
-	ClientReferenceID     string            `json:"clientReferenceId,omitempty"`
-	SuccessfulURL         string            `json:"successfulUrl,omitempty"`
-	FailedURL             string            `json:"failedUrl,omitempty"`
-	AuthorizationURL      string            `json:"authorizationUrl,omitempty"`
-	Created               string            `json:"created,omitempty"`
-	ProviderTransactionID string            `json:"providerTransactionId,omitempty"`
-	FailureReason         *PawaFailureReason `json:"failureReason,omitempty"`
-	Metadata              map[string]string `json:"metadata,omitempty"`
+type FailureReason struct {
+	Code    string `json:"code,omitempty"`
+	Message string `json:"message,omitempty"`
 }
 
-type PawaDepositStatusResponse struct {
-	Status string               `json:"status"`
-	Data   *PawaDepositResponse `json:"data,omitempty"`
+type APIError struct {
+	StatusCode    int
+	Body          string
+	FailureReason *FailureReason
 }
 
-type PawaPredictProviderRequest struct {
-	PhoneNumber string `json:"phoneNumber"`
-}
+func (e *APIError) Error() string {
+	if e.FailureReason != nil {
+		if e.FailureReason.Code != "" && e.FailureReason.Message != "" {
+			return fmt.Sprintf("pawapay error %s: %s", e.FailureReason.Code, e.FailureReason.Message)
+		}
 
-type PawaPredictProviderResponse struct {
-	Country     string `json:"country,omitempty"`
-	Provider    string `json:"provider,omitempty"`
-	PhoneNumber string `json:"phoneNumber,omitempty"`
+		if e.FailureReason.Message != "" {
+			return fmt.Sprintf("pawapay error: %s", e.FailureReason.Message)
+		}
+	}
+
+	if e.Body != "" {
+		return fmt.Sprintf("pawapay returned status %d: %s", e.StatusCode, e.Body)
+	}
+
+	return fmt.Sprintf("pawapay returned status %d", e.StatusCode)
 }

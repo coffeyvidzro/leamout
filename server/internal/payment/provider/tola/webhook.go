@@ -1,4 +1,4 @@
-package pawapay
+package tola
 
 import (
 	"context"
@@ -19,14 +19,13 @@ func NewWebhookHandler(log *slog.Logger) *WebhookHandler {
 }
 
 func (h *WebhookHandler) Provider() payment.ProviderName {
-	return payment.ProviderPawaPay
+	return payment.ProviderTola
 }
 
 func (h *WebhookHandler) HandleWebhook(ctx context.Context, event webhook.Event) error {
-	// TODO: parse pawaPay callback payload and update transaction/payment status.
-	// For now, acknowledge webhook so provider retries do not pile up.
+	// TODO: parse Tola callback payload and update transaction/payment status.
 	if h.log != nil {
-		h.log.InfoContext(ctx, "received pawapay webhook", "event_type", event.EventType)
+		h.log.InfoContext(ctx, "received tola webhook", "event_type", event.EventType)
 	}
 
 	return nil
