@@ -27,14 +27,6 @@ type ProviderConfig struct {
 	APIKey  string `env:"API_KEY"`
 }
 
-type MoolreConfig struct {
-	BaseURL       string `env:"BASE_URL"`
-	APIUser       string `env:"API_USER"`
-	APIKey        string `env:"API_KEY"`
-	APIPubKey     string `env:"API_PUBKEY"`
-	AccountNumber string `env:"ACCOUNT_NUMBER"`
-}
-
 type Config struct {
 	AppEnv            string `env:"APP_ENV" envDefault:"development"`
 	HTTPPort          string `env:"HTTP_PORT" envDefault:"8080"`
@@ -57,7 +49,6 @@ type Config struct {
 	Github OAuthConfig `envPrefix:"GITHUB_"`
 
 	Arkesel ProviderConfig `envPrefix:"ARKESEL_"`
-	Moolre  MoolreConfig   `envPrefix:"MOOLRE_"`
 	PawaPay ProviderConfig `envPrefix:"PAWAPAY_"`
 }
 
