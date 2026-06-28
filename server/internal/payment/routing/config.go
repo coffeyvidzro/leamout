@@ -7,6 +7,15 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/payment"
 )
 
+type RouteFees struct {
+	MMOFeeBps      int64 `json:"mmo_fee_bps"`      // actual mobile money operator fee
+	ProviderFeeBps int64 `json:"provider_fee_bps"` // provider fee + Leamout cushion
+}
+
+func (f RouteFees) TotalFeeBps() int64 {
+	return f.MMOFeeBps + f.ProviderFeeBps
+}
+
 type Route struct {
 	Country  string
 	Network  string
@@ -14,6 +23,8 @@ type Route struct {
 
 	Provider payment.ProviderName
 	Operator string
+
+	Fees RouteFees
 
 	Priority int
 	Enabled  bool
@@ -45,6 +56,10 @@ func NewDefaultConfig() *Config {
 			Currency: "XOF",
 			Provider: payment.ProviderPawaPay,
 			Operator: "MOOV_BEN",
+			Fees: RouteFees{
+				MMOFeeBps:      120, // 1.2%
+				ProviderFeeBps: 150, // 1.5%
+			},
 			Priority: 1,
 			Enabled:  true,
 		},
@@ -54,6 +69,10 @@ func NewDefaultConfig() *Config {
 			Currency: "XOF",
 			Provider: payment.ProviderPawaPay,
 			Operator: "MTN_MOMO_BEN",
+			Fees: RouteFees{
+				MMOFeeBps:      120, // 1.2%
+				ProviderFeeBps: 150, // 1.5%
+			},
 			Priority: 1,
 			Enabled:  true,
 		},
@@ -65,6 +84,10 @@ func NewDefaultConfig() *Config {
 			Currency: "XOF",
 			Provider: payment.ProviderPawaPay,
 			Operator: "MOOV_BFA",
+			Fees: RouteFees{
+				MMOFeeBps:      200, // 2.0% MMO
+				ProviderFeeBps: 150, // 1.0% pawaPay + 0.5% Leamout cushion
+			},
 			Priority: 1,
 			Enabled:  true,
 		},
@@ -74,6 +97,36 @@ func NewDefaultConfig() *Config {
 			Currency: "XOF",
 			Provider: payment.ProviderTola,
 			Operator: "BURKINA_FASO.MOOV",
+			Fees: RouteFees{
+				MMOFeeBps:      200, // 2.0% MMO
+				ProviderFeeBps: 150, // Tola/provider + Leamout cushion
+			},
+			Priority: 2,
+			Enabled:  true,
+		},
+		{
+			Country:  "BFA",
+			Network:  "ORANGE",
+			Currency: "XOF",
+			Provider: payment.ProviderPawaPay,
+			Operator: "ORANGE_BFA",
+			Fees: RouteFees{
+				MMOFeeBps:      230, // 2.3% MMO
+				ProviderFeeBps: 150, // 1.0% pawaPay + 0.5% Leamout cushion
+			},
+			Priority: 1,
+			Enabled:  true,
+		},
+		{
+			Country:  "BFA",
+			Network:  "ORANGE",
+			Currency: "XOF",
+			Provider: payment.ProviderTola,
+			Operator: "BURKINA_FASO.ORANGE",
+			Fees: RouteFees{
+				MMOFeeBps:      230, // 2.3% MMO
+				ProviderFeeBps: 150, // Tola/provider + Leamout cushion
+			},
 			Priority: 2,
 			Enabled:  true,
 		},
@@ -85,6 +138,10 @@ func NewDefaultConfig() *Config {
 			Currency: "XAF",
 			Provider: payment.ProviderPawaPay,
 			Operator: "MTN_MOMO_CMR",
+			Fees: RouteFees{
+				MMOFeeBps:      75,  // 0.75% MMO
+				ProviderFeeBps: 150, // 1.0% pawaPay + 0.5% Leamout cushion
+			},
 			Priority: 1,
 			Enabled:  true,
 		},
@@ -94,6 +151,10 @@ func NewDefaultConfig() *Config {
 			Currency: "XAF",
 			Provider: payment.ProviderTola,
 			Operator: "CAMEROON.MTN",
+			Fees: RouteFees{
+				MMOFeeBps:      75,  // 0.75% MMO
+				ProviderFeeBps: 150, // Tola/provider + Leamout cushion
+			},
 			Priority: 2,
 			Enabled:  true,
 		},
@@ -103,6 +164,10 @@ func NewDefaultConfig() *Config {
 			Currency: "XAF",
 			Provider: payment.ProviderPawaPay,
 			Operator: "ORANGE_CMR",
+			Fees: RouteFees{
+				MMOFeeBps:      77,  // 0.77% MMO
+				ProviderFeeBps: 150, // 1.0% pawaPay + 0.5% Leamout cushion
+			},
 			Priority: 1,
 			Enabled:  true,
 		},
@@ -112,6 +177,10 @@ func NewDefaultConfig() *Config {
 			Currency: "XAF",
 			Provider: payment.ProviderTola,
 			Operator: "CAMEROON.ORANGE",
+			Fees: RouteFees{
+				MMOFeeBps:      77,  // 0.77% MMO
+				ProviderFeeBps: 150, // Tola/provider + Leamout cushion
+			},
 			Priority: 2,
 			Enabled:  true,
 		},
@@ -123,6 +192,10 @@ func NewDefaultConfig() *Config {
 			Currency: "GHS",
 			Provider: payment.ProviderPawaPay,
 			Operator: "AIRTELTIGO_GHA",
+			Fees: RouteFees{
+				MMOFeeBps:      100, // 1.0%
+				ProviderFeeBps: 150, // 1.5%
+			},
 			Priority: 1,
 			Enabled:  true,
 		},
@@ -132,6 +205,10 @@ func NewDefaultConfig() *Config {
 			Currency: "GHS",
 			Provider: payment.ProviderTola,
 			Operator: "GHANA.AIRTELTIGO",
+			Fees: RouteFees{
+				MMOFeeBps:      100, // 1.0%
+				ProviderFeeBps: 150, // 1.5%
+			},
 			Priority: 2,
 			Enabled:  true,
 		},
@@ -141,6 +218,10 @@ func NewDefaultConfig() *Config {
 			Currency: "GHS",
 			Provider: payment.ProviderPawaPay,
 			Operator: "MTN_MOMO_GHA",
+			Fees: RouteFees{
+				MMOFeeBps:      100, // 1.0%
+				ProviderFeeBps: 150, // 1.5%
+			},
 			Priority: 1,
 			Enabled:  true,
 		},
@@ -150,6 +231,10 @@ func NewDefaultConfig() *Config {
 			Currency: "GHS",
 			Provider: payment.ProviderTola,
 			Operator: "GHANA.MTN",
+			Fees: RouteFees{
+				MMOFeeBps:      100, // 1.0%
+				ProviderFeeBps: 150, // 1.5%
+			},
 			Priority: 2,
 			Enabled:  true,
 		},
@@ -159,6 +244,10 @@ func NewDefaultConfig() *Config {
 			Currency: "GHS",
 			Provider: payment.ProviderPawaPay,
 			Operator: "VODAFONE_GHA",
+			Fees: RouteFees{
+				MMOFeeBps:      100, // 1.0%
+				ProviderFeeBps: 150, // 1.5%
+			},
 			Priority: 1,
 			Enabled:  true,
 		},
@@ -168,6 +257,10 @@ func NewDefaultConfig() *Config {
 			Currency: "GHS",
 			Provider: payment.ProviderTola,
 			Operator: "GHANA.TELECEL",
+			Fees: RouteFees{
+				MMOFeeBps:      100, // 1.0%
+				ProviderFeeBps: 150, // 1.5%
+			},
 			Priority: 2,
 			Enabled:  true,
 		},
@@ -175,28 +268,14 @@ func NewDefaultConfig() *Config {
 		// Ivory Coast - XOF
 		{
 			Country:  "CIV",
-			Network:  "MOOV",
-			Currency: "XOF",
-			Provider: payment.ProviderPawaPay,
-			Operator: "MOOV_CIV",
-			Priority: 1,
-			Enabled:  true,
-		},
-		{
-			Country:  "CIV",
-			Network:  "MOOV",
-			Currency: "XOF",
-			Provider: payment.ProviderTola,
-			Operator: "IVORY_COAST.MOOV",
-			Priority: 2,
-			Enabled:  true,
-		},
-		{
-			Country:  "CIV",
 			Network:  "MTN",
 			Currency: "XOF",
 			Provider: payment.ProviderPawaPay,
 			Operator: "MTN_MOMO_CIV",
+			Fees: RouteFees{
+				MMOFeeBps:      80,  // 0.80% MMO
+				ProviderFeeBps: 150, // 1.0% pawaPay + 0.5% Leamout cushion
+			},
 			Priority: 1,
 			Enabled:  true,
 		},
@@ -206,6 +285,10 @@ func NewDefaultConfig() *Config {
 			Currency: "XOF",
 			Provider: payment.ProviderTola,
 			Operator: "IVORY_COAST.MTN",
+			Fees: RouteFees{
+				MMOFeeBps:      80,  // 0.80% MMO
+				ProviderFeeBps: 150, // 1.0% pawaPay + 0.5% Leamout cushion
+			},
 			Priority: 2,
 			Enabled:  true,
 		},
@@ -215,6 +298,10 @@ func NewDefaultConfig() *Config {
 			Currency: "XOF",
 			Provider: payment.ProviderPawaPay,
 			Operator: "ORANGE_CIV",
+			Fees: RouteFees{
+				MMOFeeBps:      150, // 1.5% MMO
+				ProviderFeeBps: 150, // 1.0% pawaPay + 0.5% Leamout cushion
+			},
 			Priority: 1,
 			Enabled:  true,
 		},
@@ -224,44 +311,10 @@ func NewDefaultConfig() *Config {
 			Currency: "XOF",
 			Provider: payment.ProviderTola,
 			Operator: "IVORY_COAST.ORANGE",
-			Priority: 2,
-			Enabled:  true,
-		},
-
-		// Senegal - XOF
-		{
-			Country:  "SEN",
-			Network:  "FREE",
-			Currency: "XOF",
-			Provider: payment.ProviderPawaPay,
-			Operator: "FREE_SEN",
-			Priority: 1,
-			Enabled:  true,
-		},
-		{
-			Country:  "SEN",
-			Network:  "FREE",
-			Currency: "XOF",
-			Provider: payment.ProviderTola,
-			Operator: "SENEGAL.FREE",
-			Priority: 2,
-			Enabled:  true,
-		},
-		{
-			Country:  "SEN",
-			Network:  "ORANGE",
-			Currency: "XOF",
-			Provider: payment.ProviderPawaPay,
-			Operator: "ORANGE_SEN",
-			Priority: 1,
-			Enabled:  true,
-		},
-		{
-			Country:  "SEN",
-			Network:  "ORANGE",
-			Currency: "XOF",
-			Provider: payment.ProviderTola,
-			Operator: "SENEGAL.ORANGE",
+			Fees: RouteFees{
+				MMOFeeBps:      150, // 1.5% MMO
+				ProviderFeeBps: 150, // 1.0% pawaPay + 0.5% Leamout cushion
+			},
 			Priority: 2,
 			Enabled:  true,
 		},
@@ -273,6 +326,10 @@ func NewDefaultConfig() *Config {
 			Currency: "SLE",
 			Provider: payment.ProviderPawaPay,
 			Operator: "ORANGE_SLE",
+			Fees: RouteFees{
+				MMOFeeBps:      230, // 2.3% MMO
+				ProviderFeeBps: 150, // 1.0% pawaPay + 0.5% Leamout cushion
+			},
 			Priority: 1,
 			Enabled:  true,
 		},
@@ -282,6 +339,10 @@ func NewDefaultConfig() *Config {
 			Currency: "SLE",
 			Provider: payment.ProviderTola,
 			Operator: "SIERRA_LEONE.ORANGE",
+			Fees: RouteFees{
+				MMOFeeBps:      230, // 2.3% MMO
+				ProviderFeeBps: 150, // 1.0% pawaPay + 0.5% Leamout cushion
+			},
 			Priority: 2,
 			Enabled:  true,
 		},

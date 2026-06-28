@@ -54,7 +54,8 @@ func (s *Server) buildPaymentStack(
 		walletService,
 	)
 
-	checkoutService := checkout.NewService(checkoutRepo, paymentService)
+	// checkoutService := checkout.NewService(checkoutRepo, paymentService)
+	checkoutService := checkout.NewService(checkoutRepo, paymentService, paymentRouter)
 	paymentService.SetCheckoutCompleter(checkoutService)
 
 	return &paymentStack{

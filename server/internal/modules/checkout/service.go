@@ -13,6 +13,7 @@ import (
 	"time"
 
 	corepayment "github.com/cuffeyvidzro/leamout/internal/payment"
+	"github.com/cuffeyvidzro/leamout/pkg/markets"
 	"github.com/google/uuid"
 )
 
@@ -27,16 +28,29 @@ type PaymentCharger interface {
 	Charge(ctx context.Context, payload corepayment.UnifiedPayload) (*corepayment.ChargeResult, error)
 }
 
+type PaymentRouteResolver interface {
+	Resolve(ctx context.Context, payload corepayment.UnifiedPayload) (*corepayment.RoutingResult, error)
+}
+
 type Service struct {
 	repository     *Repository
 	paymentService PaymentCharger
+	feeResolver    PaymentRouteResolver
 }
 
-func NewService(repository *Repository, paymentService PaymentCharger) *Service {
-	return &Service{
+func NewService(repository *Repository, paymentService PaymentCharger, feeResolvers ...PaymentRouteResolver) *Service {
+	service := &Service{
 		repository:     repository,
 		paymentService: paymentService,
 	}
+
+	if len(feeResolvers) > 0 {
+		service.feeResolver = feeResolvers[0]
+	} else if resolver, ok := paymentService.(PaymentRouteResolver); ok {
+		service.feeResolver = resolver
+	}
+
+	return service
 }
 
 func (s *Service) Create(ctx context.Context, userID uuid.UUID, req CreateRequest) (*Session, error) {
@@ -80,7 +94,16 @@ func (s *Service) Get(ctx context.Context, userID, id uuid.UUID) (*Session, erro
 	return s.repository.Get(ctx, userID, id)
 }
 
-func (s *Service) GetPublic(ctx context.Context, clientSecret string) (*Session, error) {
+func (s *Service) GetPublic(ctx context.Context, clientSecret string, req PublicCheckoutRequest) (*PublicCheckoutResponse, error) {
+	session, err := s.getPublicSession(ctx, clientSecret)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.publicCheckoutResponse(ctx, session, req)
+}
+
+func (s *Service) getPublicSession(ctx context.Context, clientSecret string) (*Session, error) {
 	clientSecret = strings.TrimSpace(clientSecret)
 	if clientSecret == "" {
 		return nil, ErrNotFound
@@ -102,37 +125,33 @@ func (s *Service) Pay(ctx context.Context, clientSecret string, req PayRequest) 
 		return nil, errors.New("payment service is not configured")
 	}
 
-	session, err := s.GetPublic(ctx, clientSecret)
+	session, err := s.getPublicSession(ctx, clientSecret)
 	if err != nil {
 		return nil, err
 	}
 
-	country := normalizeCountry(req.Country)
-	if country == "" {
-		return nil, fmt.Errorf("%w: unsupported country %q", ErrInvalidPaymentRequest, req.Country)
-	}
+	country := markets.NormalizeCountry(req.Country)
+	network := markets.NormalizeNetwork(country, req.Network)
+	phone := markets.NormalizePhone(country, req.Phone)
 
-	network := normalizeNetwork(req.Network)
-	if network == "" {
-		return nil, fmt.Errorf("%w: network is required", ErrInvalidPaymentRequest)
-	}
+	currency := strings.ToUpper(strings.TrimSpace(session.Currency))
 
-	currency := normalizeCurrency(session.Currency)
-	phone := normalizePhone(country, req.Phone)
-	if phone == "" {
-		return nil, fmt.Errorf("%w: phone is required", ErrInvalidPaymentRequest)
+	routingFees, err := s.resolveRouteFees(ctx, session, country, network)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidPaymentRequest, err)
 	}
+	fee := calculateCustomerCheckoutFees(session.Amount, routingFees)
 
 	transactionID := uuid.NewString()
 	metadata := stringMetadata(session.Metadata)
-	addPaymentMetadata(metadata, session, req, country, network, phone)
+	addPaymentMetadata(metadata, session, req, country, network, phone, fee)
 
 	result, err := s.paymentService.Charge(ctx, corepayment.UnifiedPayload{
 		TransactionID: transactionID,
 		Country:       country,
 		Network:       network,
 		PhoneNumber:   phone,
-		Amount:        strconv.FormatInt(session.Amount, 10),
+		Amount:        strconv.FormatInt(fee.PayableAmount, 10),
 		Currency:      currency,
 		Metadata:      metadata,
 	})
@@ -149,7 +168,11 @@ func (s *Service) Pay(ctx context.Context, clientSecret string, req PayRequest) 
 		Provider:          string(result.Provider),
 		ProviderReference: result.ProviderReference,
 		Status:            string(result.Status),
-		Amount:            session.Amount,
+		Amount:            fee.PayableAmount,
+		BaseAmount:        fee.BaseAmount,
+		ProcessingFee:     fee.ProcessingFee,
+		PayableAmount:     fee.PayableAmount,
+		Fee:               fee,
 		Currency:          currency,
 		Country:           country,
 		Network:           network,
@@ -160,6 +183,103 @@ func (s *Service) Pay(ctx context.Context, clientSecret string, req PayRequest) 
 
 func (s *Service) CompletePaidCheckout(ctx context.Context, checkoutID uuid.UUID) error {
 	return s.repository.CompletePaidCheckout(ctx, checkoutID)
+}
+
+func (s *Service) publicCheckoutResponse(ctx context.Context, session *Session, req PublicCheckoutRequest) (*PublicCheckoutResponse, error) {
+	response := &PublicCheckoutResponse{
+		ID:         session.ID,
+		Mode:       session.Mode,
+		Source:     session.Source,
+		Label:      session.Label,
+		Amount:     session.Amount,
+		Currency:   normalizeCurrency(session.Currency),
+		Status:     session.Status,
+		ExpiresAt:  session.ExpiresAt,
+		SuccessURL: session.SuccessURL,
+		ReturnURL:  session.ReturnURL,
+		Metadata:   session.Metadata,
+	}
+
+	hasCountry := strings.TrimSpace(req.Country) != ""
+	hasNetwork := strings.TrimSpace(req.Network) != ""
+	if !hasCountry && !hasNetwork {
+		return response, nil
+	}
+	if !hasCountry || !hasNetwork {
+		return nil, fmt.Errorf("%w: country and network are required to calculate checkout fees", ErrInvalidPaymentRequest)
+	}
+
+	country := markets.NormalizeCountry(req.Country)
+
+	network := markets.NormalizeNetwork(country, req.Network)
+
+	routingFees, err := s.resolveRouteFees(ctx, session, country, network)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidPaymentRequest, err)
+	}
+
+	fee := calculateCustomerCheckoutFees(session.Amount, routingFees)
+	response.Country = stringPointer(country)
+	response.Network = stringPointer(network)
+	response.Fee = &fee
+
+	return response, nil
+}
+
+func (s *Service) resolveRouteFees(ctx context.Context, session *Session, country, network string) (corepayment.RoutingFees, error) {
+	if s.feeResolver == nil {
+		return corepayment.RoutingFees{}, errors.New("payment fee resolver is not configured")
+	}
+
+	currency := normalizeCurrency(session.Currency)
+	route, err := s.feeResolver.Resolve(ctx, corepayment.UnifiedPayload{
+		TransactionID: "checkout_fee_preview",
+		Country:       country,
+		Network:       network,
+		Currency:      currency,
+		Amount:        strconv.FormatInt(session.Amount, 10),
+	})
+	if err != nil {
+		return corepayment.RoutingFees{}, err
+	}
+	if route == nil {
+		return corepayment.RoutingFees{}, errors.New("payment route was not resolved")
+	}
+	if route.Fees.TotalFeeBps <= 0 {
+		return corepayment.RoutingFees{}, errors.New("payment route fees are not configured")
+	}
+
+	return route.Fees, nil
+}
+
+func calculateCustomerCheckoutFees(baseAmount int64, fees corepayment.RoutingFees) CheckoutFeeBreakdown {
+	totalFeeBps := fees.TotalFeeBps
+	payableAmount := grossUpAmount(baseAmount, totalFeeBps)
+	processingFee := payableAmount - baseAmount
+
+	return CheckoutFeeBreakdown{
+		FeePayer:       FeePayerCustomer,
+		MMOFeeBps:      fees.MMOFeeBps,
+		ProviderFeeBps: fees.ProviderFeeBps,
+		TotalFeeBps:    totalFeeBps,
+		BaseAmount:     baseAmount,
+		ProcessingFee:  processingFee,
+		PayableAmount:  payableAmount,
+		NetAmount:      baseAmount,
+	}
+}
+
+func grossUpAmount(netAmount int64, bps int64) int64 {
+	if netAmount <= 0 || bps <= 0 {
+		return netAmount
+	}
+
+	denominator := int64(10000) - bps
+	if denominator <= 0 {
+		return netAmount
+	}
+
+	return (netAmount*10000 + denominator - 1) / denominator
 }
 
 func HashClientSecret(clientSecret string) string {
@@ -187,7 +307,7 @@ func stringMetadata(metadata map[string]any) map[string]string {
 	return out
 }
 
-func addPaymentMetadata(metadata map[string]string, session *Session, req PayRequest, country, network, phone string) {
+func addPaymentMetadata(metadata map[string]string, session *Session, req PayRequest, country, network, phone string, fee CheckoutFeeBreakdown) {
 	if metadata == nil || session == nil {
 		return
 	}
@@ -201,6 +321,15 @@ func addPaymentMetadata(metadata map[string]string, session *Session, req PayReq
 	metadata["checkout_country"] = country
 	metadata["checkout_network"] = network
 	metadata["customer_phone"] = phone
+
+	metadata["checkout_fee_payer"] = string(fee.FeePayer)
+	metadata["checkout_mmo_fee_bps"] = strconv.FormatInt(fee.MMOFeeBps, 10)
+	metadata["checkout_provider_fee_bps"] = strconv.FormatInt(fee.ProviderFeeBps, 10)
+	metadata["checkout_total_fee_bps"] = strconv.FormatInt(fee.TotalFeeBps, 10)
+	metadata["checkout_base_amount"] = strconv.FormatInt(fee.BaseAmount, 10)
+	metadata["checkout_processing_fee"] = strconv.FormatInt(fee.ProcessingFee, 10)
+	metadata["checkout_payable_amount"] = strconv.FormatInt(fee.PayableAmount, 10)
+	metadata["checkout_net_amount"] = strconv.FormatInt(fee.NetAmount, 10)
 
 	if session.CustomerID != nil {
 		metadata["checkout_customer_id"] = session.CustomerID.String()
@@ -217,121 +346,10 @@ func addPaymentMetadata(metadata map[string]string, session *Session, req PayReq
 	if email := strings.TrimSpace(req.CustomerEmail); email != "" {
 		metadata["customer_email"] = email
 	}
-	if detectedCountry := normalizeCountry(req.Intelligence.DetectedCountry); detectedCountry != "" {
-		metadata["detected_country"] = detectedCountry
-	}
-	if source := strings.TrimSpace(req.Intelligence.DetectedSource); source != "" {
-		metadata["detected_country_source"] = source
-	}
-	if ip := strings.TrimSpace(req.Intelligence.ClientIP); ip != "" {
-		metadata["client_ip"] = ip
-	}
 }
 
 func normalizeCurrency(value string) string {
 	return strings.ToUpper(strings.TrimSpace(value))
-}
-
-func normalizeCountry(value string) string {
-	value = strings.ToUpper(strings.TrimSpace(value))
-	value = strings.ReplaceAll(value, "-", " ")
-	value = strings.Join(strings.Fields(value), " ")
-
-	switch value {
-	case "BEN", "BJ", "BENIN":
-		return "BEN"
-	case "BFA", "BF", "BURKINA FASO":
-		return "BFA"
-	case "CMR", "CM", "CAMEROON":
-		return "CMR"
-	case "GHA", "GH", "GHANA":
-		return "GHA"
-	case "CIV", "CI", "IVORY COAST", "COTE DIVOIRE", "CÔTE DIVOIRE", "COTE D'IVOIRE", "CÔTE D'IVOIRE":
-		return "CIV"
-	case "NGA", "NG", "NIGERIA":
-		return "NGA"
-	case "SEN", "SN", "SENEGAL":
-		return "SEN"
-	case "SLE", "SL", "SIERRA LEONE":
-		return "SLE"
-	default:
-		return ""
-	}
-}
-
-func normalizeNetwork(value string) string {
-	value = strings.ToUpper(strings.TrimSpace(value))
-	value = strings.ReplaceAll(value, "-", "")
-	value = strings.ReplaceAll(value, "_", "")
-	value = strings.ReplaceAll(value, " ", "")
-
-	switch value {
-	case "MTN", "MTNMOMO", "MOMO":
-		return "MTN"
-	case "MOOV":
-		return "MOOV"
-	case "ORANGE":
-		return "ORANGE"
-	case "FREE":
-		return "FREE"
-	case "TELECEL", "VODAFONE":
-		return "TELECEL"
-	case "AIRTELTIGO", "AIRTELTIGOMONEY", "AT", "ATMONEY":
-		return "AIRTELTIGO"
-	default:
-		return value
-	}
-}
-
-func normalizePhone(country, phone string) string {
-	phone = strings.TrimSpace(phone)
-	phone = strings.ReplaceAll(phone, " ", "")
-	phone = strings.ReplaceAll(phone, "-", "")
-	phone = strings.ReplaceAll(phone, "(", "")
-	phone = strings.ReplaceAll(phone, ")", "")
-	phone = strings.TrimPrefix(phone, "+")
-
-	if strings.HasPrefix(phone, "00") && len(phone) > 2 {
-		phone = phone[2:]
-	}
-
-	prefix := phonePrefixForCountry(country)
-	if prefix == "" || phone == "" {
-		return phone
-	}
-
-	if strings.HasPrefix(phone, prefix) {
-		return phone
-	}
-
-	if strings.HasPrefix(phone, "0") && len(phone) > 1 {
-		return prefix + phone[1:]
-	}
-
-	return prefix + phone
-}
-
-func phonePrefixForCountry(country string) string {
-	switch normalizeCountry(country) {
-	case "BEN":
-		return "229"
-	case "BFA":
-		return "226"
-	case "CMR":
-		return "237"
-	case "GHA":
-		return "233"
-	case "CIV":
-		return "225"
-	case "NGA":
-		return "234"
-	case "SEN":
-		return "221"
-	case "SLE":
-		return "232"
-	default:
-		return ""
-	}
 }
 
 func firstNonEmpty(values ...string) string {
@@ -342,4 +360,8 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func stringPointer(value string) *string {
+	return &value
 }

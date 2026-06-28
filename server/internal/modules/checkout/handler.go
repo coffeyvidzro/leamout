@@ -88,8 +88,13 @@ func (h *Handler) Update(c *gin.Context) {
 }
 
 func (h *Handler) GetPublic(c *gin.Context) {
-	session, err := h.service.GetPublic(c.Request.Context(), c.Param("clientSecret"))
-	respondCheckout(c, session, err)
+	req := PublicCheckoutRequest{
+		Country: c.Query("country"),
+		Network: c.Query("network"),
+	}
+
+	response, err := h.service.GetPublic(c.Request.Context(), c.Param("clientSecret"), req)
+	respondPublicCheckout(c, response, err)
 }
 
 func (h *Handler) Pay(c *gin.Context) {
@@ -130,6 +135,24 @@ func respondCheckout(c *gin.Context, session *Session, err error) {
 	}
 
 	c.JSON(http.StatusOK, session)
+}
+
+func respondPublicCheckout(c *gin.Context, response *PublicCheckoutResponse, err error) {
+	if errors.Is(err, ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "checkout session not found"})
+		return
+	}
+	if errors.Is(err, ErrInvalidCheckoutRequest) || errors.Is(err, ErrInvalidPaymentRequest) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": checkoutErrorMessage(err)})
+		return
+	}
+	if err != nil {
+		slog.ErrorContext(c.Request.Context(), "failed to fetch public checkout session", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch checkout session"})
+		return
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 func requestIntelligence(c *gin.Context) RequestIntelligence {

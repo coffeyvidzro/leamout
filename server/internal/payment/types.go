@@ -54,11 +54,18 @@ type ChargeProvider interface {
 	Charge(ctx context.Context, payload UnifiedPayload) (*ChargeResult, error)
 }
 
+type Router interface {
+	Resolve(ctx context.Context, payload UnifiedPayload) (*RoutingResult, error)
+}
+
+type RoutingFees struct {
+	MMOFeeBps      int64 `json:"mmo_fee_bps"`
+	ProviderFeeBps int64 `json:"provider_fee_bps"`
+	TotalFeeBps    int64 `json:"total_fee_bps"`
+}
+
 type RoutingResult struct {
 	Provider ChargeProvider
 	Payload  UnifiedPayload
-}
-
-type Router interface {
-	Resolve(ctx context.Context, payload UnifiedPayload) (*RoutingResult, error)
+	Fees     RoutingFees
 }

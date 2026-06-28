@@ -65,5 +65,10 @@ func (s *Service) Resolve(ctx context.Context, payload payment.UnifiedPayload) (
 	return &payment.RoutingResult{
 		Provider: selectedProvider,
 		Payload:  routedPayload,
+		Fees: payment.RoutingFees{
+			MMOFeeBps:      selectedRoute.Fees.MMOFeeBps,
+			ProviderFeeBps: selectedRoute.Fees.ProviderFeeBps,
+			TotalFeeBps:    selectedRoute.Fees.TotalFeeBps(),
+		},
 	}, nil
 }

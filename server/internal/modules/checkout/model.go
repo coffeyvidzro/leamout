@@ -12,6 +12,8 @@ type Source string
 
 type Status string
 
+type FeePayer string
+
 const (
 	ModePayment      Mode = "payment"
 	ModeSubscription Mode = "subscription"
@@ -26,6 +28,8 @@ const (
 	StatusCompleted Status = "completed"
 	StatusExpired   Status = "expired"
 	StatusCanceled  Status = "canceled"
+
+	FeePayerCustomer FeePayer = "customer"
 )
 
 type Session struct {
@@ -75,6 +79,43 @@ type UpdateRequest struct {
 	CanceledAt *time.Time     `json:"canceled_at,omitempty"`
 }
 
+type PublicCheckoutRequest struct {
+	Country string `json:"country,omitempty"`
+	Network string `json:"network,omitempty"`
+}
+
+type CheckoutFeeBreakdown struct {
+	FeePayer FeePayer `json:"fee_payer"`
+
+	MMOFeeBps      int64 `json:"mmo_fee_bps"`
+	ProviderFeeBps int64 `json:"provider_fee_bps"`
+	TotalFeeBps    int64 `json:"total_fee_bps"`
+
+	BaseAmount    int64 `json:"base_amount"`
+	ProcessingFee int64 `json:"processing_fee"`
+	PayableAmount int64 `json:"payable_amount"`
+	NetAmount     int64 `json:"net_amount"`
+}
+
+type PublicCheckoutResponse struct {
+	ID        uuid.UUID `json:"id"`
+	Mode      Mode      `json:"mode"`
+	Source    Source    `json:"source"`
+	Label     *string   `json:"label,omitempty"`
+	Amount    int64     `json:"amount"`
+	Currency  string    `json:"currency"`
+	Status    Status    `json:"status"`
+	ExpiresAt time.Time `json:"expires_at"`
+
+	Country *string               `json:"country,omitempty"`
+	Network *string               `json:"network,omitempty"`
+	Fee     *CheckoutFeeBreakdown `json:"fee,omitempty"`
+
+	SuccessURL *string        `json:"success_url,omitempty"`
+	ReturnURL  *string        `json:"return_url,omitempty"`
+	Metadata   map[string]any `json:"metadata"`
+}
+
 type RequestIntelligence struct {
 	DetectedCountry string `json:"-"`
 	DetectedSource  string `json:"-"`
@@ -96,10 +137,17 @@ type PayResponse struct {
 	Provider          string `json:"provider"`
 	ProviderReference string `json:"provider_reference,omitempty"`
 	Status            string `json:"status"`
-	Amount            int64  `json:"amount"`
-	Currency          string `json:"currency"`
-	Country           string `json:"country"`
-	Network           string `json:"network"`
-	Phone             string `json:"phone"`
-	CustomerMessage   string `json:"customer_message,omitempty"`
+
+	// Amount is the actual amount sent to the payment provider.
+	Amount        int64                `json:"amount"`
+	BaseAmount    int64                `json:"base_amount"`
+	ProcessingFee int64                `json:"processing_fee"`
+	PayableAmount int64                `json:"payable_amount"`
+	Fee           CheckoutFeeBreakdown `json:"fee"`
+
+	Currency        string `json:"currency"`
+	Country         string `json:"country"`
+	Network         string `json:"network"`
+	Phone           string `json:"phone"`
+	CustomerMessage string `json:"customer_message,omitempty"`
 }
