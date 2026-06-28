@@ -10,5 +10,6 @@ func RegisterRoutes(router gin.IRouter, handler *Handler, authMiddleware gin.Han
 	products.GET("", handler.List)
 	products.GET("/:id", handler.Get)
 	products.PATCH("/:id", handler.Update)
+	products.POST("/:id/benefits", handler.UpdateBenefits)
 	products.DELETE("/:id", handler.Delete)
 }
