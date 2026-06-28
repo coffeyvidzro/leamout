@@ -179,6 +179,10 @@ func (r *Repository) buildState(ctx context.Context, customer *Customer) (*State
 	if err != nil {
 		return nil, err
 	}
+	state.ActiveMeters, err = r.listActiveMeters(ctx, customer.UserID, customer.ID)
+	if err != nil {
+		return nil, err
+	}
 
 	return state, nil
 }
@@ -283,6 +287,35 @@ ORDER BY bg.granted_at DESC`
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate customer granted benefits: %w", err)
+	}
+
+	return items, nil
+}
+
+func (r *Repository) listActiveMeters(ctx context.Context, userID, customerID uuid.UUID) ([]StateActiveMeter, error) {
+	const query = `
+SELECT id, meter_id, consumed_units::float8, credited_units::float8, balance::float8, created_at, updated_at
+FROM customer_meters
+WHERE user_id = $1
+  AND customer_id = $2
+ORDER BY created_at DESC`
+
+	rows, err := r.db.Query(ctx, query, userID, customerID)
+	if err != nil {
+		return nil, fmt.Errorf("list customer active meters: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]StateActiveMeter, 0)
+	for rows.Next() {
+		meter, err := scanStateActiveMeter(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan customer active meter: %w", err)
+		}
+		items = append(items, *meter)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate customer active meters: %w", err)
 	}
 
 	return items, nil
@@ -489,6 +522,23 @@ func scanStateBenefitGrant(row pgx.Row) (*StateBenefitGrant, error) {
 	}
 
 	return &grant, nil
+}
+
+func scanStateActiveMeter(row pgx.Row) (*StateActiveMeter, error) {
+	var meter StateActiveMeter
+	if err := row.Scan(
+		&meter.ID,
+		&meter.MeterID,
+		&meter.ConsumedUnits,
+		&meter.CreditedUnits,
+		&meter.Balance,
+		&meter.CreatedAt,
+		&meter.UpdatedAt,
+	); err != nil {
+		return nil, err
+	}
+
+	return &meter, nil
 }
 
 func encodeJSON(value any) ([]byte, error) {
