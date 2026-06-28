@@ -18,12 +18,21 @@ var (
 	ErrRenewalIncomplete = errors.New("failed to complete dunning renewal")
 )
 
-type Repository struct {
-	db *pgxpool.Pool
+type CustomerMeterRefresher interface {
+	RefreshCreditsForSubscription(ctx context.Context, tx pgx.Tx, userID, subscriptionID uuid.UUID, fallbackCustomerID *uuid.UUID) error
 }
 
-func NewRepository(db *pgxpool.Pool) *Repository {
-	return &Repository{db: db}
+type Repository struct {
+	db             *pgxpool.Pool
+	customerMeters CustomerMeterRefresher
+}
+
+func NewRepository(db *pgxpool.Pool, customerMeters ...CustomerMeterRefresher) *Repository {
+	repository := &Repository{db: db}
+	if len(customerMeters) > 0 {
+		repository.customerMeters = customerMeters[0]
+	}
+	return repository
 }
 
 func (r *Repository) Create(ctx context.Context, userID uuid.UUID, req CreateRequest, clientSecretHash string) (*Session, error) {
@@ -145,15 +154,12 @@ func (r *Repository) ConfirmByClientSecretHash(ctx context.Context, clientSecret
 	if err != nil {
 		return nil, fmt.Errorf("begin checkout confirmation: %w", err)
 	}
-	defer func() {
-		_ = tx.Rollback(ctx)
-	}()
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	session, err := r.getForUpdate(ctx, tx, clientSecretHash)
 	if err != nil {
 		return nil, err
 	}
-
 	if session.Status != StatusOpen {
 		return nil, ErrNotFound
 	}
@@ -162,7 +168,6 @@ func (r *Repository) ConfirmByClientSecretHash(ctx context.Context, clientSecret
 	if err != nil {
 		return nil, err
 	}
-
 	if isDunningRenewal(session) {
 		if err := r.completeDunningRenewal(ctx, tx, session); err != nil {
 			return nil, err
@@ -389,6 +394,12 @@ DO UPDATE SET
 
 	if _, err := tx.Exec(ctx, query, session.UserID, *session.SubscriptionID, session.CustomerID, session.ID); err != nil {
 		return fmt.Errorf("grant subscription benefits: %w", err)
+	}
+
+	if r.customerMeters != nil {
+		if err := r.customerMeters.RefreshCreditsForSubscription(ctx, tx, session.UserID, *session.SubscriptionID, session.CustomerID); err != nil {
+			return err
+		}
 	}
 
 	return nil
