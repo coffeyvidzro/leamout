@@ -10,6 +10,7 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/modules/checkout"
 	"github.com/cuffeyvidzro/leamout/internal/modules/credits"
 	"github.com/cuffeyvidzro/leamout/internal/modules/customer"
+	"github.com/cuffeyvidzro/leamout/internal/modules/customermeter"
 	"github.com/cuffeyvidzro/leamout/internal/modules/dunning"
 	"github.com/cuffeyvidzro/leamout/internal/modules/meter"
 	"github.com/cuffeyvidzro/leamout/internal/modules/pat"
@@ -48,8 +49,9 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 	sessionRepo := session.NewRepository(s.pgPool, s.redis)
 	authRepo := auth.NewRepository(s.pgPool)
 	customerRepo := customer.NewRepository(s.pgPool)
+	customerMeterRepo := customermeter.NewRepository(s.pgPool)
 	productRepo := product.NewRepository(s.pgPool)
-	checkoutRepo := checkout.NewRepository(s.pgPool)
+	checkoutRepo := checkout.NewRepository(s.pgPool, customerMeterRepo)
 	patRepo := pat.NewRepository(s.pgPool)
 	subscriptionRepo := subscription.NewRepository(s.pgPool)
 	creditsRepo := credits.NewRepository(s.pgPool)
@@ -75,6 +77,7 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 	sessionService := session.NewService(sessionRepo)
 	authService := auth.NewService(authRepo, s.oauthRegistry(), sessionService)
 	customerService := customer.NewService(customerRepo)
+	customerMeterService := customermeter.NewService(customerMeterRepo)
 	productService := product.NewService(productRepo)
 	patService := pat.NewService(patRepo)
 	subscriptionService := subscription.NewService(subscriptionRepo)
@@ -88,6 +91,7 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 	sessionHandler := session.NewHandler(sessionService)
 	authHandler := auth.NewHandler(authService, s.cfg.IsDevelopment())
 	customerHandler := customer.NewHandler(customerService)
+	customerMeterHandler := customermeter.NewHandler(customerMeterService)
 	productHandler := product.NewHandler(productService)
 	checkoutHandler := paymentStack.CheckoutHandler
 	patHandler := pat.NewHandler(patService)
@@ -124,6 +128,7 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 		session.RegisterRoutes(v1, sessionHandler, authMiddleware)
 		user.RegisterRoutes(v1, userHandler, authMiddleware)
 		customer.RegisterRoutes(v1, customerHandler, authMiddleware)
+		customermeter.RegisterRoutes(v1, customerMeterHandler, authMiddleware)
 		product.RegisterRoutes(v1, productHandler, authMiddleware)
 		subscription.RegisterRoutes(v1, subscriptionHandler, authMiddleware)
 		checkout.RegisterRoutes(v1, checkoutHandler, authMiddleware)
