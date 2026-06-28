@@ -160,14 +160,17 @@ export default function CheckoutPage({ params }: CheckoutPageProps) {
       setError(null);
       setPayment(null);
 
-      const data = await apiFetch<PayResponse>(`/checkout/${clientSecret}/pay`, {
-        method: "POST",
-        body: JSON.stringify({
-          country,
-          phone: normalizedPhone,
-          operator,
-        }),
-      });
+      const data = await apiFetch<PayResponse>(
+        `/checkout/${clientSecret}/pay`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            country,
+            phone: normalizedPhone,
+            operator,
+          }),
+        },
+      );
 
       setPayment(data);
       setAwaitingApproval(true);
@@ -355,7 +358,9 @@ export default function CheckoutPage({ params }: CheckoutPageProps) {
                 </p>
               ) : null}
 
-              {error ? <p className="text-destructive text-sm">{error}</p> : null}
+              {error ? (
+                <p className="text-destructive text-sm">{error}</p>
+              ) : null}
 
               <Button
                 className="w-full"

@@ -1,12 +1,7 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -149,7 +144,9 @@ export function SubscriptionDetail({
               <div className="text-muted-foreground">Name</div>
               {customer ? (
                 <Button asChild className="h-auto p-0" variant="link">
-                  <Link href={`/customers/${customer.id}`}>{customer.name}</Link>
+                  <Link href={`/customers/${customer.id}`}>
+                    {customer.name}
+                  </Link>
                 </Button>
               ) : (
                 <div className="font-mono text-xs">
@@ -223,7 +220,9 @@ export function SubscriptionDetail({
               <TableBody>
                 {relatedDunningAttempts.map((attempt) => (
                   <TableRow key={attempt.id}>
-                    <TableCell className="capitalize">{attempt.status}</TableCell>
+                    <TableCell className="capitalize">
+                      {attempt.status}
+                    </TableCell>
                     <TableCell className="capitalize">
                       {attempt.reason.replace("_", " ")}
                     </TableCell>

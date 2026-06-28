@@ -1,12 +1,7 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -187,7 +182,9 @@ export function CustomerDetail({
               <TableBody>
                 {relatedDunningAttempts.map((attempt) => (
                   <TableRow key={attempt.id}>
-                    <TableCell className="capitalize">{attempt.status}</TableCell>
+                    <TableCell className="capitalize">
+                      {attempt.status}
+                    </TableCell>
                     <TableCell className="capitalize">
                       {attempt.reason.replace("_", " ")}
                     </TableCell>

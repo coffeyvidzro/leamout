@@ -5,12 +5,7 @@ import { useRouter } from "next/navigation";
 import type { FormEvent } from "react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiFetch } from "@/lib/api";
@@ -75,7 +70,7 @@ export function SubscriptionCreateForm({
       setSubmitting(true);
       setError(null);
 
-      const periodEndIso = new Date(periodEnd + "T23:59:59.000Z").toISOString();
+      const periodEndIso = new Date(`${periodEnd}T23:59:59.000Z`).toISOString();
 
       await apiFetch<Subscription>("/subscriptions", {
         method: "POST",
@@ -90,7 +85,9 @@ export function SubscriptionCreateForm({
       router.push("/subscriptions");
       router.refresh();
     } catch {
-      setError("Could not create subscription. Check the details and try again.");
+      setError(
+        "Could not create subscription. Check the details and try again.",
+      );
     } finally {
       setSubmitting(false);
     }

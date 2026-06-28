@@ -12,12 +12,13 @@ export default async function Page({
 }) {
   const { id } = await params;
 
-  const [subscription, customers, products, dunningAttempts] = await Promise.all([
-    serverApiFetch<Subscription>(`/subscriptions/${id}`),
-    serverApiFetch<Customer[]>("/customers"),
-    serverApiFetch<Product[]>("/products"),
-    serverApiFetch<DunningAttempt[]>("/dunning-events"),
-  ]);
+  const [subscription, customers, products, dunningAttempts] =
+    await Promise.all([
+      serverApiFetch<Subscription>(`/subscriptions/${id}`),
+      serverApiFetch<Customer[]>("/customers"),
+      serverApiFetch<Product[]>("/products"),
+      serverApiFetch<DunningAttempt[]>("/dunning-events"),
+    ]);
 
   return (
     <SubscriptionDetail

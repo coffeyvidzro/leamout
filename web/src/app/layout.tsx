@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
+import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { fontHeading, fontMono, fontSans } from "@/utils/fonts";
 import { constructMetadata } from "@/utils/metadata";
-import { ThemeProvider } from "@/components/theme-provider";
 import "./globals.css";
 
 export const metadata: Metadata = constructMetadata();

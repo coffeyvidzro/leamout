@@ -2,12 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/dashboard/page-header";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -95,9 +90,7 @@ export default function WalletPage() {
 
           <CardContent>
             {loading ? (
-              <p className="text-sm text-muted-foreground">
-                Loading wallet...
-              </p>
+              <p className="text-sm text-muted-foreground">Loading wallet...</p>
             ) : null}
 
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
