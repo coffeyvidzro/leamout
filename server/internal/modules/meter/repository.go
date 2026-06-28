@@ -314,7 +314,7 @@ func filterClauseSQL(clause FilterClause) (string, any, bool, error) {
 	case "ne":
 		return property + " <> $%d", valueToString(clause.Value), true, nil
 	case "contains":
-		return property + " ILIKE '%' || $%d || '%'", valueToString(clause.Value), true, nil
+		return property + " ILIKE '%%' || $%d || '%%'", valueToString(clause.Value), true, nil
 	case "exists":
 		return property + " IS NOT NULL", nil, false, nil
 	case "gt", "gte", "lt", "lte":
