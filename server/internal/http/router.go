@@ -18,6 +18,7 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/modules/transaction"
 	"github.com/cuffeyvidzro/leamout/internal/modules/user"
 	"github.com/cuffeyvidzro/leamout/internal/modules/wallet"
+	"github.com/cuffeyvidzro/leamout/internal/modules/usageevent"
 	paymentwebhook "github.com/cuffeyvidzro/leamout/internal/payment/webhook"
 	"github.com/gin-gonic/gin"
 )
@@ -54,6 +55,7 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 	transactionRepo := transaction.NewRepository(s.pgPool)
 	walletRepo := wallet.NewRepository(s.pgPool)
 	paymentRepo := modulepayment.NewRepository(s.pgPool)
+	usageRepo := usageevent.NewRepository(s.pgPool)
 
 	transactionService := transaction.NewService(transactionRepo)
 	walletService := wallet.NewService(walletRepo)
@@ -74,6 +76,7 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 	subscriptionService := subscription.NewService(subscriptionRepo)
 	creditsService := credits.NewService(creditsRepo)
 	dunningService := dunning.NewService(dunningRepo, paymentStack.CheckoutService)
+	usageService := usageevent.NewService(usageRepo)
 
 	userHandler := user.NewHandler(userService)
 	sessionHandler := session.NewHandler(sessionService)
@@ -88,6 +91,7 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 	transactionHandler := transaction.NewHandler(transactionService)
 	walletHandler := wallet.NewHandler(walletService)
 	paymentHandler := paymentStack.PaymentHandler
+	usageHandler := usageevent.NewHandler(usageService)
 
 	paymentWebhookRegistry, err := s.paymentWebhookRegistry()
 	if err != nil {
@@ -120,6 +124,8 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 		transaction.RegisterRoutes(v1, transactionHandler, authMiddleware)
 		wallet.RegisterRoutes(v1, walletHandler, authMiddleware)
 		modulepayment.RegisterRoutes(v1, paymentHandler, authMiddleware)
+
+		usageevent.RegisterRoutes(v1, usageHandler, authMiddleware)
 	}
 
 	router.GET("/health", func(c *gin.Context) {
