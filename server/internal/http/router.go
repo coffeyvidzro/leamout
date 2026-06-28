@@ -10,15 +10,16 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/modules/credits"
 	"github.com/cuffeyvidzro/leamout/internal/modules/customer"
 	"github.com/cuffeyvidzro/leamout/internal/modules/dunning"
+	"github.com/cuffeyvidzro/leamout/internal/modules/meter"
 	"github.com/cuffeyvidzro/leamout/internal/modules/pat"
 	modulepayment "github.com/cuffeyvidzro/leamout/internal/modules/payment"
 	"github.com/cuffeyvidzro/leamout/internal/modules/product"
 	"github.com/cuffeyvidzro/leamout/internal/modules/session"
 	"github.com/cuffeyvidzro/leamout/internal/modules/subscription"
 	"github.com/cuffeyvidzro/leamout/internal/modules/transaction"
+	"github.com/cuffeyvidzro/leamout/internal/modules/usageevent"
 	"github.com/cuffeyvidzro/leamout/internal/modules/user"
 	"github.com/cuffeyvidzro/leamout/internal/modules/wallet"
-	"github.com/cuffeyvidzro/leamout/internal/modules/usageevent"
 	paymentwebhook "github.com/cuffeyvidzro/leamout/internal/payment/webhook"
 	"github.com/gin-gonic/gin"
 )
@@ -56,6 +57,7 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 	walletRepo := wallet.NewRepository(s.pgPool)
 	paymentRepo := modulepayment.NewRepository(s.pgPool)
 	usageRepo := usageevent.NewRepository(s.pgPool)
+	meterRepo := meter.NewRepository(s.pgPool)
 
 	transactionService := transaction.NewService(transactionRepo)
 	walletService := wallet.NewService(walletRepo)
@@ -77,6 +79,7 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 	creditsService := credits.NewService(creditsRepo)
 	dunningService := dunning.NewService(dunningRepo, paymentStack.CheckoutService)
 	usageService := usageevent.NewService(usageRepo)
+	meterService := meter.NewService(meterRepo)
 
 	userHandler := user.NewHandler(userService)
 	sessionHandler := session.NewHandler(sessionService)
@@ -92,6 +95,7 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 	walletHandler := wallet.NewHandler(walletService)
 	paymentHandler := paymentStack.PaymentHandler
 	usageHandler := usageevent.NewHandler(usageService)
+	meterHandler := meter.NewHandler(meterService)
 
 	paymentWebhookRegistry, err := s.paymentWebhookRegistry()
 	if err != nil {
@@ -124,8 +128,8 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 		transaction.RegisterRoutes(v1, transactionHandler, authMiddleware)
 		wallet.RegisterRoutes(v1, walletHandler, authMiddleware)
 		modulepayment.RegisterRoutes(v1, paymentHandler, authMiddleware)
-
 		usageevent.RegisterRoutes(v1, usageHandler, authMiddleware)
+		meter.RegisterRoutes(v1, meterHandler, authMiddleware)
 	}
 
 	router.GET("/health", func(c *gin.Context) {
