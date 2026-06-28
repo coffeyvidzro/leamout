@@ -95,9 +95,31 @@ func (h *Handler) Delete(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+func (h *Handler) UpdateBenefits(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid product id"})
+		return
+	}
+
+	var req UpdateBenefitsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	product, err := h.service.UpdateBenefits(c.Request.Context(), userID, id, req)
+	respondProduct(c, product, err)
+}
+
 func respondProduct(c *gin.Context, product *Product, err error) {
 	if errors.Is(err, ErrNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "product not found"})
+		return
+	}
+	if errors.Is(err, ErrInvalidProduct) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	if err != nil {
