@@ -20,6 +20,7 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/modules/usageevent"
 	"github.com/cuffeyvidzro/leamout/internal/modules/user"
 	"github.com/cuffeyvidzro/leamout/internal/modules/wallet"
+	"github.com/cuffeyvidzro/leamout/internal/modules/usageevent"
 	paymentwebhook "github.com/cuffeyvidzro/leamout/internal/payment/webhook"
 	"github.com/gin-gonic/gin"
 )
