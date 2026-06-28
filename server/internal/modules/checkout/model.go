@@ -111,9 +111,8 @@ type PublicCheckoutResponse struct {
 	Network *string               `json:"network,omitempty"`
 	Fee     *CheckoutFeeBreakdown `json:"fee,omitempty"`
 
-	SuccessURL *string        `json:"success_url,omitempty"`
-	ReturnURL  *string        `json:"return_url,omitempty"`
-	Metadata   map[string]any `json:"metadata"`
+	SuccessURL *string `json:"success_url,omitempty"`
+	ReturnURL  *string `json:"return_url,omitempty"`
 }
 
 type RequestIntelligence struct {

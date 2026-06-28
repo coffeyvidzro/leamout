@@ -143,8 +143,16 @@ func (s *Service) Pay(ctx context.Context, clientSecret string, req PayRequest) 
 	fee := calculateCustomerCheckoutFees(session.Amount, routingFees)
 
 	transactionID := uuid.NewString()
-	metadata := stringMetadata(session.Metadata)
-	addPaymentMetadata(metadata, session, req, country, network, phone, fee)
+
+	metadata := map[string]string{
+		"checkout_user_id":    session.UserID.String(),
+		"checkout_session_id": session.ID.String(),
+		"checkout_fee_amount": strconv.FormatInt(fee.ProcessingFee, 10),
+	}
+
+	if session.CustomerID != nil {
+		metadata["checkout_customer_id"] = session.CustomerID.String()
+	}
 
 	result, err := s.paymentService.Charge(ctx, corepayment.UnifiedPayload{
 		TransactionID: transactionID,
@@ -197,9 +205,7 @@ func (s *Service) publicCheckoutResponse(ctx context.Context, session *Session, 
 		ExpiresAt:  session.ExpiresAt,
 		SuccessURL: session.SuccessURL,
 		ReturnURL:  session.ReturnURL,
-		Metadata:   session.Metadata,
 	}
-
 	hasCountry := strings.TrimSpace(req.Country) != ""
 	hasNetwork := strings.TrimSpace(req.Network) != ""
 	if !hasCountry && !hasNetwork {
@@ -254,8 +260,8 @@ func (s *Service) resolveRouteFees(ctx context.Context, session *Session, countr
 
 func calculateCustomerCheckoutFees(baseAmount int64, fees corepayment.RoutingFees) CheckoutFeeBreakdown {
 	totalFeeBps := fees.TotalFeeBps
-	payableAmount := grossUpAmount(baseAmount, totalFeeBps)
-	processingFee := payableAmount - baseAmount
+	processingFee := percentageCeil(baseAmount, totalFeeBps)
+	payableAmount := baseAmount + processingFee
 
 	return CheckoutFeeBreakdown{
 		FeePayer:       FeePayerCustomer,
@@ -269,17 +275,12 @@ func calculateCustomerCheckoutFees(baseAmount int64, fees corepayment.RoutingFee
 	}
 }
 
-func grossUpAmount(netAmount int64, bps int64) int64 {
-	if netAmount <= 0 || bps <= 0 {
-		return netAmount
+func percentageCeil(amount int64, bps int64) int64 {
+	if amount <= 0 || bps <= 0 {
+		return 0
 	}
 
-	denominator := int64(10000) - bps
-	if denominator <= 0 {
-		return netAmount
-	}
-
-	return (netAmount*10000 + denominator - 1) / denominator
+	return (amount*bps + 9999) / 10000
 }
 
 func HashClientSecret(clientSecret string) string {
@@ -293,59 +294,6 @@ func newClientSecret() (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(bytes), nil
-}
-
-func stringMetadata(metadata map[string]any) map[string]string {
-	out := make(map[string]string)
-	for key, value := range metadata {
-		key = strings.TrimSpace(key)
-		if key == "" || value == nil {
-			continue
-		}
-		out[key] = strings.TrimSpace(fmt.Sprint(value))
-	}
-	return out
-}
-
-func addPaymentMetadata(metadata map[string]string, session *Session, req PayRequest, country, network, phone string, fee CheckoutFeeBreakdown) {
-	if metadata == nil || session == nil {
-		return
-	}
-
-	metadata["checkout_session_id"] = session.ID.String()
-	metadata["checkout_user_id"] = session.UserID.String()
-	metadata["checkout_mode"] = string(session.Mode)
-	metadata["checkout_source"] = string(session.Source)
-	metadata["checkout_amount"] = strconv.FormatInt(session.Amount, 10)
-	metadata["checkout_currency"] = normalizeCurrency(session.Currency)
-	metadata["checkout_country"] = country
-	metadata["checkout_network"] = network
-	metadata["customer_phone"] = phone
-
-	metadata["checkout_fee_payer"] = string(fee.FeePayer)
-	metadata["checkout_mmo_fee_bps"] = strconv.FormatInt(fee.MMOFeeBps, 10)
-	metadata["checkout_provider_fee_bps"] = strconv.FormatInt(fee.ProviderFeeBps, 10)
-	metadata["checkout_total_fee_bps"] = strconv.FormatInt(fee.TotalFeeBps, 10)
-	metadata["checkout_base_amount"] = strconv.FormatInt(fee.BaseAmount, 10)
-	metadata["checkout_processing_fee"] = strconv.FormatInt(fee.ProcessingFee, 10)
-	metadata["checkout_payable_amount"] = strconv.FormatInt(fee.PayableAmount, 10)
-	metadata["checkout_net_amount"] = strconv.FormatInt(fee.NetAmount, 10)
-
-	if session.CustomerID != nil {
-		metadata["checkout_customer_id"] = session.CustomerID.String()
-	}
-	if session.SubscriptionID != nil {
-		metadata["checkout_subscription_id"] = session.SubscriptionID.String()
-	}
-	if session.Label != nil && strings.TrimSpace(*session.Label) != "" {
-		metadata["checkout_label"] = strings.TrimSpace(*session.Label)
-	}
-	if name := strings.TrimSpace(req.CustomerName); name != "" {
-		metadata["customer_name"] = name
-	}
-	if email := strings.TrimSpace(req.CustomerEmail); email != "" {
-		metadata["customer_email"] = email
-	}
 }
 
 func normalizeCurrency(value string) string {

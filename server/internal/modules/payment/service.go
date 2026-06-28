@@ -16,6 +16,13 @@ import (
 
 var ErrInvalidPayment = errors.New("invalid payment")
 
+const (
+	metadataCheckoutUserID     = "checkout_user_id"
+	metadataCheckoutSessionID  = "checkout_session_id"
+	metadataCheckoutCustomerID = "checkout_customer_id"
+	metadataCheckoutFeeAmount  = "checkout_fee_amount"
+)
+
 type Charger interface {
 	Charge(ctx context.Context, payload corepayment.UnifiedPayload) (*corepayment.ChargeResult, error)
 }
@@ -57,8 +64,8 @@ func (s *Service) SetCheckoutCompleter(completer CheckoutCompleter) {
 	s.checkoutCompleter = completer
 }
 
-// Charge starts a checkout payment using the internal payment orchestration layer
-// and records the attempt in the business payments table.
+// Charge starts a checkout payment through the internal payment orchestration layer
+// and records the business payment + provider attempt.
 func (s *Service) Charge(ctx context.Context, payload corepayment.UnifiedPayload) (*corepayment.ChargeResult, error) {
 	if s.repository == nil {
 		return nil, errors.New("payment repository is not configured")
@@ -79,6 +86,14 @@ func (s *Service) Charge(ctx context.Context, payload corepayment.UnifiedPayload
 		return nil, err
 	}
 
+	feeAmount, err := feeAmountFromMetadata(payload.Metadata)
+	if err != nil {
+		return nil, err
+	}
+	if feeAmount > amount {
+		return nil, fmt.Errorf("%w: fee amount cannot be greater than amount", ErrInvalidPayment)
+	}
+
 	result, chargeErr := s.charger.Charge(ctx, payload)
 	if chargeErr != nil {
 		return nil, chargeErr
@@ -96,32 +111,24 @@ func (s *Service) Charge(ctx context.Context, payload corepayment.UnifiedPayload
 		result.TransactionID = payload.TransactionID
 	}
 
-	metadata := stringMapToAny(payload.Metadata)
-	metadata["payment_transaction_id"] = result.TransactionID
-	metadata["payment_provider"] = string(result.Provider)
-	metadata["payment_status"] = string(result.Status)
-	metadata["payment_country"] = payload.Country
-	metadata["payment_network"] = payload.Network
-	metadata["payment_currency"] = payload.Currency
-	metadata["payment_phone"] = payload.PhoneNumber
-	if result.ProviderReference != "" {
-		metadata["payment_provider_reference"] = result.ProviderReference
+	provider := strings.ToLower(strings.TrimSpace(string(result.Provider)))
+	if provider == "" {
+		provider = strings.ToLower(strings.TrimSpace(string(payload.Provider)))
 	}
-	if result.Message != "" {
-		metadata["payment_message"] = result.Message
-	}
+
+	metadata := paymentMetadata(payload, result, paymentCtx, feeAmount)
 
 	paymentRecord, err := s.repository.Create(ctx, CreateParams{
 		UserID:            paymentCtx.UserID,
 		CheckoutID:        &paymentCtx.CheckoutID,
 		CustomerID:        paymentCtx.CustomerID,
 		ExternalID:        result.TransactionID,
-		Provider:          string(result.Provider),
+		Provider:          provider,
 		ProviderReference: result.ProviderReference,
 		Status:            statusFromCore(result.Status),
 		Currency:          payload.Currency,
 		Amount:            amount,
-		FeeAmount:         0,
+		FeeAmount:         feeAmount,
 		Metadata:          metadata,
 	})
 	if err != nil {
@@ -130,7 +137,7 @@ func (s *Service) Charge(ctx context.Context, payload corepayment.UnifiedPayload
 
 	_, _ = s.repository.CreateAttempt(ctx, CreateAttemptParams{
 		PaymentID:         paymentRecord.ID,
-		Provider:          string(result.Provider),
+		Provider:          provider,
 		ProviderReference: result.ProviderReference,
 		Status:            attemptStatusFromCore(result.Status),
 		RawRequest:        attemptRequest(payload),
@@ -258,20 +265,20 @@ func checkoutContextFromMetadata(metadata map[string]string) (*checkoutPaymentCo
 		return nil, fmt.Errorf("%w: missing checkout metadata", ErrInvalidPayment)
 	}
 
-	userID, err := metadataUUID(metadata, "checkout_user_id")
+	userID, err := metadataUUID(metadata, metadataCheckoutUserID)
 	if err != nil {
 		return nil, err
 	}
-	checkoutID, err := metadataUUID(metadata, "checkout_session_id")
+	checkoutID, err := metadataUUID(metadata, metadataCheckoutSessionID)
 	if err != nil {
 		return nil, err
 	}
 
 	var customerID *uuid.UUID
-	if raw := strings.TrimSpace(metadata["checkout_customer_id"]); raw != "" {
+	if raw := strings.TrimSpace(metadata[metadataCheckoutCustomerID]); raw != "" {
 		parsed, err := uuid.Parse(raw)
 		if err != nil {
-			return nil, fmt.Errorf("%w: invalid checkout_customer_id", ErrInvalidPayment)
+			return nil, fmt.Errorf("%w: invalid %s", ErrInvalidPayment, metadataCheckoutCustomerID)
 		}
 		customerID = &parsed
 	}
@@ -295,6 +302,24 @@ func metadataUUID(metadata map[string]string, key string) (uuid.UUID, error) {
 	}
 
 	return id, nil
+}
+
+func feeAmountFromMetadata(metadata map[string]string) (int64, error) {
+	if metadata == nil {
+		return 0, nil
+	}
+
+	raw := strings.TrimSpace(metadata[metadataCheckoutFeeAmount])
+	if raw == "" {
+		return 0, nil
+	}
+
+	feeAmount, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || feeAmount < 0 {
+		return 0, fmt.Errorf("%w: invalid %s", ErrInvalidPayment, metadataCheckoutFeeAmount)
+	}
+
+	return feeAmount, nil
 }
 
 func parseAmount(value string) (int64, error) {
@@ -391,6 +416,40 @@ func attemptResponse(result *corepayment.ChargeResult) map[string]any {
 		"message":            result.Message,
 		"created_at":         result.CreatedAt,
 	}
+}
+
+func paymentMetadata(
+	payload corepayment.UnifiedPayload,
+	result *corepayment.ChargeResult,
+	paymentCtx *checkoutPaymentContext,
+	feeAmount int64,
+) map[string]any {
+	metadata := map[string]any{
+		"checkout_session_id":   paymentCtx.CheckoutID.String(),
+		"payment_transaction_id": result.TransactionID,
+		"payment_provider":       string(result.Provider),
+		"payment_status":         string(result.Status),
+		"payment_country":        payload.Country,
+		"payment_network":        payload.Network,
+		"payment_currency":       payload.Currency,
+		"payment_phone":          payload.PhoneNumber,
+		"payment_amount":         payload.Amount,
+	}
+
+	if paymentCtx.CustomerID != nil {
+		metadata["checkout_customer_id"] = paymentCtx.CustomerID.String()
+	}
+	if feeAmount > 0 {
+		metadata["payment_fee_amount"] = feeAmount
+	}
+	if result.ProviderReference != "" {
+		metadata["payment_provider_reference"] = result.ProviderReference
+	}
+	if result.Message != "" {
+		metadata["payment_message"] = result.Message
+	}
+
+	return metadata
 }
 
 func metadataString(metadata map[string]any, key string) string {

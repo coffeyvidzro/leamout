@@ -23,12 +23,17 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 }
 
 func (r *Repository) Create(ctx context.Context, params CreateParams) (*Payment, error) {
+	params.ExternalID = strings.TrimSpace(params.ExternalID)
+	params.Provider = strings.ToLower(strings.TrimSpace(params.Provider))
+	params.Currency = strings.ToUpper(strings.TrimSpace(params.Currency))
+
+	if params.Status == "" {
+		params.Status = StatusPending
+	}
+
 	metadata, err := encodeAnyMap(params.Metadata)
 	if err != nil {
 		return nil, err
-	}
-	if params.Status == "" {
-		params.Status = StatusPending
 	}
 
 	const query = `
@@ -46,7 +51,7 @@ INSERT INTO payments (
 	metadata
 )
 VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''), $7, $8, $9, $10, $11)
-ON CONFLICT (external_id) DO UPDATE
+ON CONFLICT (user_id, external_id) DO UPDATE
 SET provider_reference = COALESCE(NULLIF(EXCLUDED.provider_reference, ''), payments.provider_reference),
 	status = EXCLUDED.status,
 	metadata = payments.metadata || EXCLUDED.metadata
@@ -57,11 +62,11 @@ RETURNING id, user_id, checkout_id, customer_id, external_id, provider, provider
 		params.UserID,
 		params.CheckoutID,
 		params.CustomerID,
-		strings.TrimSpace(params.ExternalID),
-		strings.ToLower(strings.TrimSpace(params.Provider)),
+		params.ExternalID,
+		params.Provider,
 		strings.TrimSpace(params.ProviderReference),
 		params.Status,
-		strings.ToUpper(strings.TrimSpace(params.Currency)),
+		params.Currency,
 		params.Amount,
 		params.FeeAmount,
 		metadata,
@@ -74,6 +79,9 @@ RETURNING id, user_id, checkout_id, customer_id, external_id, provider, provider
 }
 
 func (r *Repository) UpdateFromProvider(ctx context.Context, params UpdateFromProviderParams) (*Payment, error) {
+	params.ExternalID = strings.TrimSpace(params.ExternalID)
+	params.Provider = strings.ToLower(strings.TrimSpace(params.Provider))
+
 	metadata, err := encodeAnyMap(params.Metadata)
 	if err != nil {
 		return nil, err
@@ -90,8 +98,8 @@ RETURNING id, user_id, checkout_id, customer_id, external_id, provider, provider
 	currency, amount, fee_amount, net_amount, metadata, created_at, updated_at`
 
 	item, err := scanPayment(r.db.QueryRow(ctx, query,
-		strings.TrimSpace(params.ExternalID),
-		strings.ToLower(strings.TrimSpace(params.Provider)),
+		params.ExternalID,
+		params.Provider,
 		params.Status,
 		strings.TrimSpace(params.ProviderReference),
 		metadata,
@@ -301,17 +309,4 @@ func encodeAnyMap(value map[string]any) ([]byte, error) {
 	}
 
 	return data, nil
-}
-
-func stringMapToAny(src map[string]string) map[string]any {
-	out := make(map[string]any, len(src))
-	for key, value := range src {
-		key = strings.TrimSpace(key)
-		if key == "" {
-			continue
-		}
-		out[key] = value
-	}
-
-	return out
 }
