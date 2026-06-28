@@ -1,52 +1,41 @@
 # Leamout Backend
 
-Leamout is a prototype billing and monetization backend for African digital creators.
+Leamout is an MVP billing and monetization platform for African digital creators built on PawaPay and Tola Mobile.
 
-The backend prototype currently proves the core renewal lifecycle end to end:
-
-> A creator creates a product, customer, subscription, and communication credit balance. The scheduler finds a subscription nearing expiry, the worker sends a paid SMS renewal reminder, the customer opens a secure recovery link, checkout is confirmed, the subscription renews, credits are debited, and the dunning attempt is marked paid.
+The backend implements the core renewal lifecycle for creator subscriptions: a creator creates products, prices, customers, subscriptions, and communication credits; the scheduler finds subscriptions nearing expiry; the worker sends paid SMS renewal reminders; customers open secure recovery links; checkout sessions are created; payment confirmation renews subscriptions; credits are debited; and dunning attempts are marked paid.
 
 ## Current status
 
 | Area | Status |
 | --- | --- |
-| Backend prototype | Achieved |
 | Backend MVP core | Achieved |
+| Product, price, customer, and subscription APIs | Achieved |
+| Dunning scanner, queue, worker, and recovery links | Achieved |
+| Communication credits and SMS debit ledger | Achieved |
+| Checkout session lifecycle | Achieved |
+| PawaPay and Tola Mobile payment foundation | MVP target |
 | Next.js checkout UI | Next |
-| Real payment provider | Not integrated yet |
-| Production short-domain routing | Not deployed yet |
+| Production short-domain routing | Next |
+| Full creator dashboard | Later |
 
-## Prototype thesis
+## Product thesis
 
-Many African digital creators need subscription billing and renewal automation without assuming card-first rails.
+Many African digital creators need subscription billing and renewal automation without assuming card-first payment rails.
 
-Leamout's MVP direction is:
+Leamout focuses on mobile-money-first monetization for creators who sell memberships, communities, courses, media access, digital services, or recurring content products. The MVP direction is simple:
 
 1. A creator defines products and prices.
 2. A customer has an active subscription.
 3. A scanner finds subscriptions nearing expiry.
 4. A River worker sends a renewal SMS.
 5. SMS cost is deducted from the creator's prepaid communication credits.
-6. The customer opens a short recovery link.
+6. The customer opens a secure short recovery link.
 7. The backend creates a checkout session.
-8. Checkout confirmation renews the subscription.
-9. The dunning attempt is marked paid and the token cannot be reused.
+8. The checkout is confirmed through the payment layer.
+9. The subscription renews.
+10. The dunning attempt is marked paid and the token cannot be reused.
 
-## Tech stack
-
-| Concern | Technology | Use |
-| --- | --- | --- |
-| Language | Go | Backend services, workers, scheduler, HTTP handlers |
-| API router | Gin | JSON APIs and public recovery/checkout endpoints |
-| Database | PostgreSQL | Users, sessions, products, prices, customers, subscriptions, dunning, checkout, credits, PATs |
-| Queue | River | Durable background jobs for dunning reminders |
-| Scheduler | robfig/cron | Subscription scanner |
-| SMS | Internal SMS orchestration | Mock provider locally, Arkesel route for Ghana numbers |
-| Auth | OAuth sessions + PATs | Browser login and API testing/integration auth |
-| Geo/IP/security | MaxMind/IPinfo + Arcjet | Request context and protection middleware |
-| Container | Docker Compose | Local PostgreSQL and Redis dependencies |
-
-## Implemented flow
+## Core flow
 
 ```text
 Creator auth / PAT
@@ -67,22 +56,35 @@ Worker creates/reuses dunning attempt and token
   ↓
 SMS service routes message and debits credits
   ↓
-Mock SMS prints: http://localhost:3000/r/<token>
-  ↓
-Short link maps to backend dunning route
+Customer receives short renewal link
   ↓
 GET /v1/dunning/:token creates checkout session
   ↓
 Backend redirects to frontend checkout URL
   ↓
-POST /v1/checkout/:clientSecret/confirm
+Customer confirms checkout
   ↓
-Subscription period extends
+Payment confirmation renews subscription
   ↓
 Dunning attempt becomes paid
   ↓
 Dunning token is revoked and cannot be reused
 ```
+
+## Tech stack
+
+| Concern | Technology | Use |
+| --- | --- | --- |
+| Language | Go | Backend services, workers, scheduler, HTTP handlers |
+| API router | Gin | JSON APIs and public recovery/checkout endpoints |
+| Database | PostgreSQL | Users, sessions, products, prices, customers, subscriptions, dunning, checkout, credits, PATs |
+| Queue | River | Durable background jobs for dunning reminders |
+| Scheduler | robfig/cron | Subscription scanner |
+| Payments | PawaPay, Tola Mobile | Mobile-money-first checkout and renewal foundation |
+| SMS | Internal SMS orchestration | Mock provider locally, provider routing for production SMS |
+| Auth | OAuth sessions + PATs | Browser login and API testing/integration auth |
+| Geo/IP/security | MaxMind/IPinfo + Arcjet | Request context and protection middleware |
+| Container | Docker Compose | Local PostgreSQL and Redis dependencies |
 
 ## Domain model
 
@@ -94,7 +96,7 @@ Leamout separates these concepts:
 - **Subscriptions**: active customer subscriptions tied to a recurring price.
 - **Dunning attempts**: system-managed renewal reminder attempts for subscriptions nearing expiry.
 - **Dunning tokens**: short-lived hashed recovery tokens used in SMS links.
-- **Checkout sessions**: payment/renewal attempts created when a customer starts checkout.
+- **Checkout sessions**: payment or renewal attempts created when a customer starts checkout.
 - **Communication credits**: prepaid creator balance used for outbound SMS.
 - **Personal access tokens**: user-scoped API tokens for local testing and future API access.
 
@@ -190,7 +192,7 @@ $Headers = @{
 
 Do not commit or share raw PATs. Revoke test PATs after use.
 
-## Manual product flow test
+## Manual renewal flow test
 
 ### 1. Create product + recurring price
 
@@ -217,7 +219,7 @@ $PriceID = $product.prices[0].id
 
 ### 2. Create customer
 
-Use `+234` locally to route through the mock SMS provider.
+Use a mock-routed number locally when testing SMS without a production provider.
 
 ```powershell
 $rand = Get-Random -Minimum 1000000 -Maximum 9999999
@@ -380,7 +382,7 @@ Expected local mock route result:
 
 ```text
 topup   1000   1000
- debit    -15    985   mock   +234   Dunning SMS
+debit    -15    985   mock   +234   Dunning SMS
 ```
 
 ## Important routes
@@ -477,10 +479,20 @@ Checkout: https://leamout.com/checkout/<client_secret>
 API:      https://api.leamout.com/v1/checkout/<client_secret>
 ```
 
+## Payment direction
+
+Leamout is designed around mobile money as the primary collection rail.
+
+- **PawaPay**: mobile money payment collection and checkout confirmation foundation.
+- **Tola Mobile**: mobile money and local payment infrastructure foundation.
+- **Local development**: checkout confirmation can be simulated while provider callbacks and production settlement behavior are being wired.
+
+The MVP backend keeps checkout, subscription renewal, and dunning state separate so provider-specific confirmation logic can be added without changing the product/customer/subscription model.
+
 ## What is intentionally not built yet
 
 - Next.js checkout UI.
-- Real MoMo/payment provider confirmation.
+- Production payment provider callback hardening.
 - Production short-domain deployment.
 - Full creator dashboard.
 - Full organization/team support.
