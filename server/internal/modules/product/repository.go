@@ -371,7 +371,7 @@ SELECT EXISTS(
 		return fmt.Errorf("check benefit exists: %w", err)
 	}
 	if !exists {
-		return fmt.Errorf("benefit %s not found", benefitID)
+		return fmt.Errorf("%w: benefit %s not found", ErrInvalidProduct, benefitID)
 	}
 
 	return nil
