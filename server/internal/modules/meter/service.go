@@ -122,6 +122,9 @@ func validateUpdateRequest(req *UpdateRequest) error {
 func validateUnit(unit Unit, label *string, multiplier *int) error {
 	switch unit {
 	case UnitScalar, UnitToken:
+		if label != nil || multiplier != nil {
+			return fmt.Errorf("%w: custom unit fields are only allowed when unit is custom", ErrInvalidMeter)
+		}
 		return nil
 	case UnitCustom:
 		if label == nil || strings.TrimSpace(*label) == "" {
@@ -139,7 +142,7 @@ func validateUnit(unit Unit, label *string, multiplier *int) error {
 func validateFilter(filter EventFilter) error {
 	filter.Conjunction = strings.ToLower(strings.TrimSpace(filter.Conjunction))
 	if filter.Conjunction != "and" && filter.Conjunction != "or" {
-		return fmt.Errorf("%w: filter conjunction must be and or or", ErrInvalidMeter)
+		return fmt.Errorf("%w: filter conjunction must be and or", ErrInvalidMeter)
 	}
 	if filter.Clauses == nil {
 		return fmt.Errorf("%w: filter clauses are required", ErrInvalidMeter)
