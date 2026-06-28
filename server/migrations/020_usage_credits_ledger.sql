@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS meter_credit_grants (
     CONSTRAINT fk_meter_credit_grants_subscription
         FOREIGN KEY (user_id, subscription_id)
         REFERENCES subscriptions (user_id, id)
-        ON DELETE SET NULL,
+        ON DELETE CASCADE,
 
     CONSTRAINT chk_meter_credit_grants_source_type
         CHECK (source_type IN ('checkout', 'manual', 'system')),
