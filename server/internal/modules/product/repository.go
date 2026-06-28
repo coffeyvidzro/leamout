@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/cuffeyvidzro/leamout/internal/modules/benefit"
 	"github.com/cuffeyvidzro/leamout/internal/modules/price"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -66,6 +67,7 @@ RETURNING id, user_id, name, description, active, metadata, created_at, updated_
 		}
 		product.Prices = append(product.Prices, *createdPrice)
 	}
+	product.Benefits = []benefit.Benefit{}
 
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit create product: %w", err)
@@ -97,6 +99,10 @@ ORDER BY created_at DESC`
 		if err != nil {
 			return nil, err
 		}
+		product.Benefits, err = r.listBenefits(ctx, userID, product.ID)
+		if err != nil {
+			return nil, err
+		}
 		products = append(products, *product)
 	}
 	if err := rows.Err(); err != nil {
@@ -117,8 +123,7 @@ WHERE user_id = $1 AND id = $2`
 		return nil, err
 	}
 
-	product.Prices, err = r.listPrices(ctx, userID, product.ID)
-	if err != nil {
+	if err := r.hydrateProduct(ctx, product); err != nil {
 		return nil, err
 	}
 
@@ -138,8 +143,7 @@ func (r *Repository) Update(ctx context.Context, userID, id uuid.UUID, req Updat
 	if err != nil {
 		return nil, err
 	}
-	product.Prices, err = r.listPrices(ctx, userID, product.ID)
-	if err != nil {
+	if err := r.hydrateProduct(ctx, product); err != nil {
 		return nil, err
 	}
 
@@ -158,6 +162,45 @@ func (r *Repository) Delete(ctx context.Context, userID, id uuid.UUID) error {
 	return nil
 }
 
+func (r *Repository) UpdateBenefits(ctx context.Context, userID, productID uuid.UUID, benefitIDs []uuid.UUID) (*Product, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin update product benefits: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if err := ensureProductExists(ctx, tx, userID, productID); err != nil {
+		return nil, err
+	}
+
+	benefitIDs = uniqueUUIDs(benefitIDs)
+	for _, benefitID := range benefitIDs {
+		if err := ensureBenefitExists(ctx, tx, userID, benefitID); err != nil {
+			return nil, err
+		}
+	}
+
+	if _, err := tx.Exec(ctx, `DELETE FROM product_benefits WHERE user_id = $1 AND product_id = $2`, userID, productID); err != nil {
+		return nil, fmt.Errorf("clear product benefits: %w", err)
+	}
+
+	for _, benefitID := range benefitIDs {
+		_, err := tx.Exec(ctx, `
+INSERT INTO product_benefits (user_id, product_id, benefit_id)
+VALUES ($1, $2, $3)
+ON CONFLICT (user_id, product_id, benefit_id) DO NOTHING`, userID, productID, benefitID)
+		if err != nil {
+			return nil, fmt.Errorf("attach product benefit: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit update product benefits: %w", err)
+	}
+
+	return r.Get(ctx, userID, productID)
+}
+
 func (r *Repository) get(ctx context.Context, query string, args ...any) (*Product, error) {
 	product, err := scanProduct(r.db.QueryRow(ctx, query, args...))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -168,6 +211,20 @@ func (r *Repository) get(ctx context.Context, query string, args ...any) (*Produ
 	}
 
 	return product, nil
+}
+
+func (r *Repository) hydrateProduct(ctx context.Context, product *Product) error {
+	var err error
+	product.Prices, err = r.listPrices(ctx, product.UserID, product.ID)
+	if err != nil {
+		return err
+	}
+	product.Benefits, err = r.listBenefits(ctx, product.UserID, product.ID)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (r *Repository) listPrices(ctx context.Context, userID, productID uuid.UUID) ([]price.Price, error) {
@@ -196,6 +253,35 @@ ORDER BY created_at ASC`
 	}
 
 	return prices, nil
+}
+
+func (r *Repository) listBenefits(ctx context.Context, userID, productID uuid.UUID) ([]benefit.Benefit, error) {
+	const query = `
+SELECT b.id, b.user_id, b.type, b.name, b.code, b.description, b.properties, b.metadata, b.archived_at, b.created_at, b.updated_at
+FROM product_benefits pb
+JOIN benefits b ON b.user_id = pb.user_id AND b.id = pb.benefit_id
+WHERE pb.user_id = $1 AND pb.product_id = $2
+ORDER BY pb.created_at ASC`
+
+	rows, err := r.db.Query(ctx, query, userID, productID)
+	if err != nil {
+		return nil, fmt.Errorf("list benefits: %w", err)
+	}
+	defer rows.Close()
+
+	benefits := make([]benefit.Benefit, 0)
+	for rows.Next() {
+		b, err := scanBenefit(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan benefit: %w", err)
+		}
+		benefits = append(benefits, *b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate benefits: %w", err)
+	}
+
+	return benefits, nil
 }
 
 func buildUpdateQuery(args []any, req UpdateRequest) (string, []any, error) {
@@ -260,6 +346,37 @@ RETURNING id, user_id, product_id, nickname, type, lookup_key, unit_amount, curr
 	))
 }
 
+func ensureProductExists(ctx context.Context, tx pgx.Tx, userID, productID uuid.UUID) error {
+	var exists bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM products WHERE user_id = $1 AND id = $2)`, userID, productID).Scan(&exists); err != nil {
+		return fmt.Errorf("check product exists: %w", err)
+	}
+	if !exists {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
+func ensureBenefitExists(ctx context.Context, tx pgx.Tx, userID, benefitID uuid.UUID) error {
+	var exists bool
+	if err := tx.QueryRow(ctx, `
+SELECT EXISTS(
+    SELECT 1
+    FROM benefits
+    WHERE user_id = $1
+      AND id = $2
+      AND archived_at IS NULL
+)`, userID, benefitID).Scan(&exists); err != nil {
+		return fmt.Errorf("check benefit exists: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("benefit %s not found", benefitID)
+	}
+
+	return nil
+}
+
 func scanProduct(row pgx.Row) (*Product, error) {
 	var product Product
 	var metadataBytes []byte
@@ -287,6 +404,9 @@ func scanProduct(row pgx.Row) (*Product, error) {
 	}
 	if product.Prices == nil {
 		product.Prices = []price.Price{}
+	}
+	if product.Benefits == nil {
+		product.Benefits = []benefit.Benefit{}
 	}
 
 	return &product, nil
@@ -323,6 +443,67 @@ func scanPrice(row pgx.Row) (*price.Price, error) {
 	}
 
 	return &p, nil
+}
+
+func scanBenefit(row pgx.Row) (*benefit.Benefit, error) {
+	var b benefit.Benefit
+	var typ string
+	var properties []byte
+	var metadata []byte
+
+	if err := row.Scan(
+		&b.ID,
+		&b.UserID,
+		&typ,
+		&b.Name,
+		&b.Code,
+		&b.Description,
+		&properties,
+		&metadata,
+		&b.ArchivedAt,
+		&b.CreatedAt,
+		&b.UpdatedAt,
+	); err != nil {
+		return nil, err
+	}
+
+	b.Type = benefit.Type(typ)
+	if len(properties) > 0 {
+		if err := json.Unmarshal(properties, &b.Properties); err != nil {
+			return nil, fmt.Errorf("decode benefit properties: %w", err)
+		}
+	}
+	if len(metadata) > 0 {
+		if err := json.Unmarshal(metadata, &b.Metadata); err != nil {
+			return nil, fmt.Errorf("decode benefit metadata: %w", err)
+		}
+	}
+	if b.Properties == nil {
+		b.Properties = map[string]any{}
+	}
+	if b.Metadata == nil {
+		b.Metadata = map[string]any{}
+	}
+
+	return &b, nil
+}
+
+func uniqueUUIDs(ids []uuid.UUID) []uuid.UUID {
+	seen := make(map[uuid.UUID]struct{}, len(ids))
+	unique := make([]uuid.UUID, 0, len(ids))
+
+	for _, id := range ids {
+		if id == uuid.Nil {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+
+	return unique
 }
 
 func encodeJSON(value any) ([]byte, error) {
