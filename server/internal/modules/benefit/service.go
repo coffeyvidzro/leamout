@@ -38,6 +38,7 @@ func (s *Service) List(ctx context.Context, params ListParams) (*ListResponse, e
 	if params.UserID == uuid.Nil {
 		return nil, fmt.Errorf("%w: missing user id", ErrInvalidBenefit)
 	}
+	params.Type = Type(strings.ToLower(strings.TrimSpace(string(params.Type))))
 	if params.Type != "" && !isValidType(params.Type) {
 		return nil, fmt.Errorf("%w: invalid benefit type", ErrInvalidBenefit)
 	}
@@ -81,6 +82,7 @@ func (s *Service) ListGrants(ctx context.Context, params ListGrantsParams) (*Lis
 	if params.UserID == uuid.Nil || params.BenefitID == uuid.Nil {
 		return nil, fmt.Errorf("%w: invalid benefit id", ErrInvalidBenefit)
 	}
+	params.Status = GrantStatus(strings.ToLower(strings.TrimSpace(string(params.Status))))
 	if params.Status != "" && !isValidGrantStatus(params.Status) {
 		return nil, fmt.Errorf("%w: invalid grant status", ErrInvalidBenefit)
 	}
