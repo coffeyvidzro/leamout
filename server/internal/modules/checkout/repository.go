@@ -18,19 +18,19 @@ var (
 	ErrRenewalIncomplete = errors.New("failed to complete dunning renewal")
 )
 
-type CustomerMeterRefresher interface {
-	RefreshCreditsForSubscription(ctx context.Context, tx pgx.Tx, userID, subscriptionID uuid.UUID, fallbackCustomerID *uuid.UUID) error
+type UsageCreditApplier interface {
+	ApplySubscriptionCredits(ctx context.Context, tx pgx.Tx, userID, subscriptionID, checkoutID uuid.UUID, fallbackCustomerID *uuid.UUID) error
 }
 
 type Repository struct {
-	db             *pgxpool.Pool
-	customerMeters CustomerMeterRefresher
+	db           *pgxpool.Pool
+	usageCredits UsageCreditApplier
 }
 
-func NewRepository(db *pgxpool.Pool, customerMeters ...CustomerMeterRefresher) *Repository {
+func NewRepository(db *pgxpool.Pool, usageCredits ...UsageCreditApplier) *Repository {
 	repository := &Repository{db: db}
-	if len(customerMeters) > 0 {
-		repository.customerMeters = customerMeters[0]
+	if len(usageCredits) > 0 {
+		repository.usageCredits = usageCredits[0]
 	}
 	return repository
 }
@@ -396,8 +396,8 @@ DO UPDATE SET
 		return fmt.Errorf("grant subscription benefits: %w", err)
 	}
 
-	if r.customerMeters != nil {
-		if err := r.customerMeters.RefreshCreditsForSubscription(ctx, tx, session.UserID, *session.SubscriptionID, session.CustomerID); err != nil {
+	if r.usageCredits != nil {
+		if err := r.usageCredits.ApplySubscriptionCredits(ctx, tx, session.UserID, *session.SubscriptionID, session.ID, session.CustomerID); err != nil {
 			return err
 		}
 	}
@@ -473,23 +473,19 @@ func metadataUUID(metadata map[string]any, key string) (uuid.UUID, error) {
 	if !ok {
 		return uuid.Nil, fmt.Errorf("%w: missing %s", ErrRenewalIncomplete, key)
 	}
-
 	value, ok := raw.(string)
 	if !ok || strings.TrimSpace(value) == "" {
 		return uuid.Nil, fmt.Errorf("%w: invalid %s", ErrRenewalIncomplete, key)
 	}
-
 	id, err := uuid.Parse(value)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("%w: invalid %s", ErrRenewalIncomplete, key)
 	}
-
 	return id, nil
 }
 
 func buildUpdateQuery(args []any, req UpdateRequest) (string, []any, error) {
 	updates := make([]string, 0, 6)
-
 	if req.Status != nil {
 		updates = append(updates, fmt.Sprintf("status = $%d", len(args)+1))
 		args = append(args, *req.Status)
@@ -531,7 +527,6 @@ func buildUpdateQuery(args []any, req UpdateRequest) (string, []any, error) {
 	if len(updates) == 0 {
 		return "", args, nil
 	}
-
 	query := fmt.Sprintf(`
 UPDATE checkout_sessions
 SET %s
@@ -539,14 +534,12 @@ WHERE user_id = $1 AND id = $2
 RETURNING id, user_id, customer_id, subscription_id, mode, source, label, amount, currency,
 	client_secret_hash, success_url, return_url, status, expires_at, completed_at, canceled_at,
 	metadata, created_at, updated_at`, strings.Join(updates, ", "))
-
 	return query, args, nil
 }
 
 func scanSession(row pgx.Row) (*Session, error) {
 	var session Session
 	var metadataBytes []byte
-
 	if err := row.Scan(
 		&session.ID,
 		&session.UserID,
@@ -570,7 +563,6 @@ func scanSession(row pgx.Row) (*Session, error) {
 	); err != nil {
 		return nil, err
 	}
-
 	if len(metadataBytes) > 0 {
 		if err := json.Unmarshal(metadataBytes, &session.Metadata); err != nil {
 			return nil, fmt.Errorf("decode checkout session metadata: %w", err)
@@ -579,7 +571,6 @@ func scanSession(row pgx.Row) (*Session, error) {
 	if session.Metadata == nil {
 		session.Metadata = map[string]any{}
 	}
-
 	return &session, nil
 }
 
@@ -588,7 +579,6 @@ func encodeJSON(value any) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("encode json: %w", err)
 	}
-
 	return data, nil
 }
 
@@ -596,7 +586,6 @@ func defaultMetadata(metadata map[string]any) map[string]any {
 	if metadata == nil {
 		return map[string]any{}
 	}
-
 	return metadata
 }
 
@@ -604,6 +593,5 @@ func optionalString(value *string) string {
 	if value == nil {
 		return ""
 	}
-
 	return strings.TrimSpace(*value)
 }
