@@ -17,6 +17,19 @@ var ErrNotFound = errors.New("meter not found")
 
 var safePropertyPattern = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
 
+type eventPropertyKind string
+
+const (
+	eventPropertyText      eventPropertyKind = "text"
+	eventPropertyMetadata  eventPropertyKind = "metadata"
+	eventPropertyTimestamp eventPropertyKind = "timestamp"
+)
+
+type eventProperty struct {
+	Expression string
+	Kind       eventPropertyKind
+}
+
 type Repository struct {
 	db *pgxpool.Pool
 }
@@ -310,16 +323,31 @@ func filterClauseSQL(clause FilterClause) (string, any, bool, error) {
 
 	switch strings.ToLower(strings.TrimSpace(clause.Operator)) {
 	case "eq":
-		return property + " = $%d", valueToString(clause.Value), true, nil
+		if property.Kind == eventPropertyTimestamp {
+			return property.Expression + " = $%d::timestamptz", valueToString(clause.Value), true, nil
+		}
+		return property.Expression + " = $%d", valueToString(clause.Value), true, nil
 	case "ne":
-		return property + " <> $%d", valueToString(clause.Value), true, nil
+		if property.Kind == eventPropertyTimestamp {
+			return property.Expression + " <> $%d::timestamptz", valueToString(clause.Value), true, nil
+		}
+		return property.Expression + " <> $%d", valueToString(clause.Value), true, nil
 	case "contains":
-		return property + " ILIKE '%%' || $%d || '%%'", valueToString(clause.Value), true, nil
+		if property.Kind == eventPropertyTimestamp {
+			return "", nil, false, fmt.Errorf("contains is not supported for timestamp property %s", clause.Property)
+		}
+		return property.Expression + " ILIKE '%%' || $%d || '%%'", valueToString(clause.Value), true, nil
 	case "exists":
-		return property + " IS NOT NULL", nil, false, nil
+		return property.Expression + " IS NOT NULL", nil, false, nil
 	case "gt", "gte", "lt", "lte":
 		op := map[string]string{"gt": ">", "gte": ">=", "lt": "<", "lte": "<="}[strings.ToLower(clause.Operator)]
-		return fmt.Sprintf("NULLIF(%s, '')::numeric %s $%%d::numeric", property, op), valueToString(clause.Value), true, nil
+		if property.Kind == eventPropertyTimestamp {
+			return fmt.Sprintf("%s %s $%%d::timestamptz", property.Expression, op), valueToString(clause.Value), true, nil
+		}
+		if property.Kind == eventPropertyText {
+			return "", nil, false, fmt.Errorf("%s is not supported for text property %s", clause.Operator, clause.Property)
+		}
+		return fmt.Sprintf("NULLIF(%s, '')::numeric %s $%%d::numeric", property.Expression, op), valueToString(clause.Value), true, nil
 	default:
 		return "", nil, false, fmt.Errorf("unsupported filter operator %s", clause.Operator)
 	}
@@ -334,29 +362,32 @@ func aggregationExpression(aggregation Aggregation) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("%s(NULLIF(%s, '')::numeric)", strings.ToUpper(string(aggregation.Func)), property), nil
+		if property.Kind != eventPropertyMetadata {
+			return "", fmt.Errorf("%s aggregation requires a numeric metadata property", aggregation.Func)
+		}
+		return fmt.Sprintf("%s(NULLIF(%s, '')::numeric)", strings.ToUpper(string(aggregation.Func)), property.Expression), nil
 	case AggregationUnique:
 		property, err := eventPropertyExpression(aggregation.Property)
 		if err != nil {
 			return "", err
 		}
-		return "COUNT(DISTINCT " + property + ")", nil
+		return "COUNT(DISTINCT " + property.Expression + ")", nil
 	default:
 		return "", fmt.Errorf("unsupported aggregation function %s", aggregation.Func)
 	}
 }
 
-func eventPropertyExpression(property string) (string, error) {
+func eventPropertyExpression(property string) (eventProperty, error) {
 	property = strings.TrimSpace(property)
 	if property == "" || !safePropertyPattern.MatchString(property) {
-		return "", fmt.Errorf("invalid event property %q", property)
+		return eventProperty{}, fmt.Errorf("invalid event property %q", property)
 	}
 
 	switch property {
-	case "id", "name", "source", "external_customer_id", "external_id":
-		return "e." + property + "::text", nil
-	case "customer_id", "parent_id":
-		return "e." + property + "::text", nil
+	case "id", "user_id", "name", "source", "customer_id", "parent_id", "external_customer_id", "external_id":
+		return eventProperty{Expression: "e." + property + "::text", Kind: eventPropertyText}, nil
+	case "timestamp", "created_at":
+		return eventProperty{Expression: "e." + property, Kind: eventPropertyTimestamp}, nil
 	}
 
 	metadataPath := property
@@ -364,11 +395,11 @@ func eventPropertyExpression(property string) (string, error) {
 	parts := strings.Split(metadataPath, ".")
 	for _, part := range parts {
 		if part == "" || !safePropertyPattern.MatchString(part) {
-			return "", fmt.Errorf("invalid metadata property %q", property)
+			return eventProperty{}, fmt.Errorf("invalid metadata property %q", property)
 		}
 	}
 
-	return "e.metadata #>> '{" + strings.Join(parts, ",") + "}'", nil
+	return eventProperty{Expression: "e.metadata #>> '{" + strings.Join(parts, ",") + "}'", Kind: eventPropertyMetadata}, nil
 }
 
 func normalizeListParams(params ListParams) ListParams {
