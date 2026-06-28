@@ -77,9 +77,13 @@ func validateCreateRequest(req *CreateRequest) error {
 	if err := validateUnit(req.Unit, req.CustomLabel, req.CustomMultiplier); err != nil {
 		return err
 	}
+
+	req.EventFilter = normalizeFilter(req.EventFilter)
 	if err := validateFilter(req.EventFilter); err != nil {
 		return err
 	}
+
+	req.Aggregation = normalizeAggregation(req.Aggregation)
 	if err := validateAggregation(req.Aggregation); err != nil {
 		return err
 	}
@@ -106,12 +110,16 @@ func validateUpdateRequest(req *UpdateRequest) error {
 		}
 	}
 	if req.EventFilter != nil {
-		if err := validateFilter(*req.EventFilter); err != nil {
+		normalized := normalizeFilter(*req.EventFilter)
+		req.EventFilter = &normalized
+		if err := validateFilter(normalized); err != nil {
 			return err
 		}
 	}
 	if req.Aggregation != nil {
-		if err := validateAggregation(*req.Aggregation); err != nil {
+		normalized := normalizeAggregation(*req.Aggregation)
+		req.Aggregation = &normalized
+		if err := validateAggregation(normalized); err != nil {
 			return err
 		}
 	}
@@ -140,7 +148,6 @@ func validateUnit(unit Unit, label *string, multiplier *int) error {
 }
 
 func validateFilter(filter EventFilter) error {
-	filter.Conjunction = strings.ToLower(strings.TrimSpace(filter.Conjunction))
 	if filter.Conjunction != "and" && filter.Conjunction != "or" {
 		return fmt.Errorf("%w: filter conjunction must be and or", ErrInvalidMeter)
 	}
@@ -177,4 +184,21 @@ func validateAggregation(aggregation Aggregation) error {
 	}
 
 	return nil
+}
+
+func normalizeFilter(filter EventFilter) EventFilter {
+	filter.Conjunction = strings.ToLower(strings.TrimSpace(filter.Conjunction))
+	for i := range filter.Clauses {
+		filter.Clauses[i].Property = strings.TrimSpace(filter.Clauses[i].Property)
+		filter.Clauses[i].Operator = strings.ToLower(strings.TrimSpace(filter.Clauses[i].Operator))
+	}
+
+	return filter
+}
+
+func normalizeAggregation(aggregation Aggregation) Aggregation {
+	aggregation.Func = AggregationFunc(strings.ToLower(strings.TrimSpace(string(aggregation.Func))))
+	aggregation.Property = strings.TrimSpace(aggregation.Property)
+
+	return aggregation
 }
