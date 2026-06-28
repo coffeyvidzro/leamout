@@ -58,6 +58,18 @@ func (h *Handler) Get(c *gin.Context) {
 	respondCustomer(c, customer, err)
 }
 
+func (h *Handler) GetState(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid customer id"})
+		return
+	}
+
+	state, err := h.service.GetState(c.Request.Context(), userID, id)
+	respondState(c, state, err)
+}
+
 func (h *Handler) Update(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	id, err := uuid.Parse(c.Param("id"))
@@ -103,6 +115,14 @@ func (h *Handler) GetByExternalID(c *gin.Context) {
 	respondCustomer(c, customer, err)
 }
 
+func (h *Handler) GetStateByExternalID(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	externalID := c.Param("external_id")
+
+	state, err := h.service.GetStateByExternalID(c.Request.Context(), userID, externalID)
+	respondState(c, state, err)
+}
+
 func (h *Handler) UpdateByExternalID(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	externalID := c.Param("external_id")
@@ -143,4 +163,17 @@ func respondCustomer(c *gin.Context, customer *Customer, err error) {
 	}
 
 	c.JSON(http.StatusOK, customer)
+}
+
+func respondState(c *gin.Context, state *State, err error) {
+	if errors.Is(err, ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "customer not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch customer state"})
+		return
+	}
+
+	c.JSON(http.StatusOK, state)
 }

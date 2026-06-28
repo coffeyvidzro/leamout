@@ -2,6 +2,7 @@ package customer
 
 import (
 	"context"
+	"strings"
 
 	"github.com/google/uuid"
 )
@@ -26,6 +27,10 @@ func (s *Service) Get(ctx context.Context, userID, id uuid.UUID) (*Customer, err
 	return s.repo.Get(ctx, userID, id)
 }
 
+func (s *Service) GetState(ctx context.Context, userID, id uuid.UUID) (*State, error) {
+	return s.repo.GetState(ctx, userID, id)
+}
+
 func (s *Service) Update(ctx context.Context, userID, id uuid.UUID, req UpdateRequest) (*Customer, error) {
 	return s.repo.Update(ctx, userID, id, req)
 }
@@ -35,13 +40,17 @@ func (s *Service) Delete(ctx context.Context, userID, id uuid.UUID) error {
 }
 
 func (s *Service) GetByExternalID(ctx context.Context, userID uuid.UUID, externalID string) (*Customer, error) {
-	return s.repo.GetByExternalID(ctx, userID, externalID)
+	return s.repo.GetByExternalID(ctx, userID, strings.TrimSpace(externalID))
+}
+
+func (s *Service) GetStateByExternalID(ctx context.Context, userID uuid.UUID, externalID string) (*State, error) {
+	return s.repo.GetStateByExternalID(ctx, userID, strings.TrimSpace(externalID))
 }
 
 func (s *Service) UpdateByExternalID(ctx context.Context, userID uuid.UUID, externalID string, req UpdateRequest) (*Customer, error) {
-	return s.repo.UpdateByExternalID(ctx, userID, externalID, req)
+	return s.repo.UpdateByExternalID(ctx, userID, strings.TrimSpace(externalID), req)
 }
 
 func (s *Service) DeleteByExternalID(ctx context.Context, userID uuid.UUID, externalID string) error {
-	return s.repo.DeleteByExternalID(ctx, userID, externalID)
+	return s.repo.DeleteByExternalID(ctx, userID, strings.TrimSpace(externalID))
 }
