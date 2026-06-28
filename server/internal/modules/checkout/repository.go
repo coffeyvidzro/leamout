@@ -406,6 +406,9 @@ func (r *Repository) CompletePaidCheckout(ctx context.Context, checkoutID uuid.U
 		return err
 	}
 	if session.Status == StatusCompleted {
+		if err := r.grantSubscriptionBenefits(ctx, tx, session); err != nil {
+			return err
+		}
 		return tx.Commit(ctx)
 	}
 	if session.Status != StatusOpen {
