@@ -6,6 +6,7 @@ import (
 
 	"github.com/cuffeyvidzro/leamout/internal/http/middleware"
 	"github.com/cuffeyvidzro/leamout/internal/modules/auth"
+	"github.com/cuffeyvidzro/leamout/internal/modules/benefit"
 	"github.com/cuffeyvidzro/leamout/internal/modules/checkout"
 	"github.com/cuffeyvidzro/leamout/internal/modules/credits"
 	"github.com/cuffeyvidzro/leamout/internal/modules/customer"
@@ -58,6 +59,7 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 	paymentRepo := modulepayment.NewRepository(s.pgPool)
 	usageRepo := usageevent.NewRepository(s.pgPool)
 	meterRepo := meter.NewRepository(s.pgPool)
+	benefitRepo := benefit.NewRepository(s.pgPool)
 
 	transactionService := transaction.NewService(transactionRepo)
 	walletService := wallet.NewService(walletRepo)
@@ -80,6 +82,7 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 	dunningService := dunning.NewService(dunningRepo, paymentStack.CheckoutService)
 	usageService := usageevent.NewService(usageRepo)
 	meterService := meter.NewService(meterRepo)
+	benefitService := benefit.NewService(benefitRepo)
 
 	userHandler := user.NewHandler(userService)
 	sessionHandler := session.NewHandler(sessionService)
@@ -96,6 +99,7 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 	paymentHandler := paymentStack.PaymentHandler
 	usageHandler := usageevent.NewHandler(usageService)
 	meterHandler := meter.NewHandler(meterService)
+	benefitHandler := benefit.NewHandler(benefitService)
 
 	paymentWebhookRegistry, err := s.paymentWebhookRegistry()
 	if err != nil {
@@ -130,6 +134,7 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 		modulepayment.RegisterRoutes(v1, paymentHandler, authMiddleware)
 		usageevent.RegisterRoutes(v1, usageHandler, authMiddleware)
 		meter.RegisterRoutes(v1, meterHandler, authMiddleware)
+		benefit.RegisterRoutes(v1, benefitHandler, authMiddleware)
 	}
 
 	router.GET("/health", func(c *gin.Context) {
