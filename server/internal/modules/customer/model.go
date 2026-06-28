@@ -47,37 +47,37 @@ type UpdateRequest struct {
 }
 
 type State struct {
-	ID                  uuid.UUID            `json:"id"`
-	UserID              uuid.UUID            `json:"user_id"`
-	Name                string               `json:"name"`
-	Email               *string              `json:"email,omitempty"`
-	Phone               string               `json:"phone"`
-	ExternalID          *string              `json:"external_id,omitempty"`
-	Address             Address              `json:"address"`
-	Metadata            map[string]any       `json:"metadata"`
-	ActiveSubscriptions []StateSubscription  `json:"active_subscriptions"`
-	GrantedBenefits     []StateBenefitGrant  `json:"granted_benefits"`
-	ActiveMeters         []StateActiveMeter   `json:"active_meters"`
-	CreatedAt           time.Time            `json:"created_at"`
-	UpdatedAt           time.Time            `json:"updated_at"`
+	ID                  uuid.UUID           `json:"id"`
+	UserID              uuid.UUID           `json:"user_id"`
+	Name                string              `json:"name"`
+	Email               *string             `json:"email,omitempty"`
+	Phone               string              `json:"phone"`
+	ExternalID          *string             `json:"external_id,omitempty"`
+	Address             Address             `json:"address"`
+	Metadata            map[string]any      `json:"metadata"`
+	ActiveSubscriptions []StateSubscription `json:"active_subscriptions"`
+	GrantedBenefits     []StateBenefitGrant `json:"granted_benefits"`
+	ActiveMeters         []StateActiveMeter  `json:"active_meters"`
+	CreatedAt           time.Time           `json:"created_at"`
+	UpdatedAt           time.Time           `json:"updated_at"`
 }
 
 type StateSubscription struct {
-	ID                  uuid.UUID      `json:"id"`
-	ProductID           uuid.UUID      `json:"product_id"`
-	PriceID             uuid.UUID      `json:"price_id"`
-	Status              string         `json:"status"`
-	Amount              int64          `json:"amount"`
-	Currency            string         `json:"currency"`
-	CurrentPeriodStart  time.Time      `json:"current_period_start"`
-	CurrentPeriodEnd    time.Time      `json:"current_period_end"`
-	CancelAtPeriodEnd   bool           `json:"cancel_at_period_end"`
-	CanceledAt          *time.Time     `json:"canceled_at,omitempty"`
-	EndsAt              *time.Time     `json:"ends_at,omitempty"`
-	EndedAt             *time.Time     `json:"ended_at,omitempty"`
-	Metadata            map[string]any `json:"metadata"`
-	CreatedAt           time.Time      `json:"created_at"`
-	UpdatedAt           time.Time      `json:"updated_at"`
+	ID                 uuid.UUID      `json:"id"`
+	ProductID          uuid.UUID      `json:"product_id"`
+	PriceID            uuid.UUID      `json:"price_id"`
+	Status             string         `json:"status"`
+	Amount             int64          `json:"amount"`
+	Currency           string         `json:"currency"`
+	CurrentPeriodStart time.Time      `json:"current_period_start"`
+	CurrentPeriodEnd   time.Time      `json:"current_period_end"`
+	CancelAtPeriodEnd  bool           `json:"cancel_at_period_end"`
+	CanceledAt         *time.Time     `json:"canceled_at,omitempty"`
+	EndsAt             *time.Time     `json:"ends_at,omitempty"`
+	EndedAt            *time.Time     `json:"ended_at,omitempty"`
+	Metadata           map[string]any `json:"metadata"`
+	CreatedAt          time.Time      `json:"created_at"`
+	UpdatedAt          time.Time      `json:"updated_at"`
 }
 
 type StateBenefitGrant struct {
@@ -105,9 +105,9 @@ type StateBenefitGrant struct {
 type StateActiveMeter struct {
 	ID            uuid.UUID `json:"id"`
 	MeterID       uuid.UUID `json:"meter_id"`
-	ConsumedUnits int64     `json:"consumed_units"`
-	CreditedUnits int64     `json:"credited_units"`
-	Balance       int64     `json:"balance"`
+	ConsumedUnits float64   `json:"consumed_units"`
+	CreditedUnits float64   `json:"credited_units"`
+	Balance       float64   `json:"balance"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }
