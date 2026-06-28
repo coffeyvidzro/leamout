@@ -425,7 +425,7 @@ func paymentMetadata(
 	feeAmount int64,
 ) map[string]any {
 	metadata := map[string]any{
-		"checkout_session_id":   paymentCtx.CheckoutID.String(),
+		"checkout_session_id":    paymentCtx.CheckoutID.String(),
 		"payment_transaction_id": result.TransactionID,
 		"payment_provider":       string(result.Provider),
 		"payment_status":         string(result.Status),
