@@ -19,6 +19,8 @@ type Repository struct {
 	db *pgxpool.Pool
 }
 
+type usageEventConsumer func(context.Context, pgx.Tx, uuid.UUID, uuid.UUID, CreateParams) error
+
 func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
@@ -43,13 +45,8 @@ func (r *Repository) Ingest(ctx context.Context, userID uuid.UUID, events []Crea
 		if err != nil {
 			return nil, err
 		}
-		if inserted {
-			response.Inserted++
-			if err := r.consumeMatchedMeters(ctx, tx, userID, *eventID, event); err != nil {
-				return nil, err
-			}
-		} else {
-			response.Duplicates++
+		if err := handleUsageEventInsertOutcome(ctx, tx, userID, response, eventID, inserted, event, r.consumeMatchedMeters); err != nil {
+			return nil, err
 		}
 	}
 
@@ -58,6 +55,19 @@ func (r *Repository) Ingest(ctx context.Context, userID uuid.UUID, events []Crea
 	}
 
 	return response, nil
+}
+
+func handleUsageEventInsertOutcome(ctx context.Context, tx pgx.Tx, userID uuid.UUID, response *IngestResponse, eventID *uuid.UUID, inserted bool, event CreateParams, consume usageEventConsumer) error {
+	if !inserted {
+		response.Duplicates++
+		return nil
+	}
+	if eventID == nil || *eventID == uuid.Nil {
+		return errors.New("inserted usage event is missing id")
+	}
+
+	response.Inserted++
+	return consume(ctx, tx, userID, *eventID, event)
 }
 
 func (r *Repository) Get(ctx context.Context, userID, id uuid.UUID) (*UsageEvent, error) {
