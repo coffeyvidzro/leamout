@@ -18,19 +18,25 @@ var (
 	ErrCheckoutNotFound         = errors.New("checkout session not found")
 )
 
+type CheckoutStateRepository interface {
+	LockByIDTx(ctx context.Context, tx pgx.Tx, id uuid.UUID) (*checkout.Session, error)
+	CompleteTx(ctx context.Context, tx pgx.Tx, id uuid.UUID) (*checkout.Session, error)
+}
+
 type UsageCreditApplier interface {
 	ApplySubscriptionCredits(ctx context.Context, tx pgx.Tx, userID, subscriptionID, checkoutID uuid.UUID, fallbackCustomerID *uuid.UUID) error
 }
 
 type Service struct {
-	db           *pgxpool.Pool
-	usageCredits UsageCreditApplier
-	transactions TransactionCreator
-	wallet       WalletCreditor
+	db            *pgxpool.Pool
+	checkoutState CheckoutStateRepository
+	usageCredits  UsageCreditApplier
+	transactions  TransactionCreator
+	wallet        WalletCreditor
 }
 
-func NewService(db *pgxpool.Pool, usageCredits ...UsageCreditApplier) *Service {
-	service := &Service{db: db}
+func NewService(db *pgxpool.Pool, checkoutState CheckoutStateRepository, usageCredits ...UsageCreditApplier) *Service {
+	service := &Service{db: db, checkoutState: checkoutState}
 	if len(usageCredits) > 0 {
 		service.usageCredits = usageCredits[0]
 	}
@@ -45,6 +51,9 @@ func (s *Service) CompletePaidCheckout(ctx context.Context, checkoutID uuid.UUID
 	if s.db == nil {
 		return errors.New("billing database is not configured")
 	}
+	if s.checkoutState == nil {
+		return errors.New("checkout state repository is not configured")
+	}
 	if checkoutID == uuid.Nil {
 		return fmt.Errorf("%w: checkout id is required", ErrInvalidCheckoutCompletion)
 	}
@@ -55,9 +64,9 @@ func (s *Service) CompletePaidCheckout(ctx context.Context, checkoutID uuid.UUID
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	session, err := s.lockCheckoutSession(ctx, tx, checkoutID)
+	session, err := s.checkoutState.LockByIDTx(ctx, tx, checkoutID)
 	if err != nil {
-		return err
+		return checkoutStateError("lock checkout session for billing completion", err)
 	}
 	if session.Status == checkout.StatusCompleted {
 		if err := s.fulfillSubscriptionBenefits(ctx, tx, session); err != nil {
@@ -69,9 +78,9 @@ func (s *Service) CompletePaidCheckout(ctx context.Context, checkoutID uuid.UUID
 		return tx.Commit(ctx)
 	}
 
-	session, err = s.completeCheckoutState(ctx, tx, checkoutID)
+	session, err = s.checkoutState.CompleteTx(ctx, tx, checkoutID)
 	if err != nil {
-		return err
+		return checkoutStateError("complete checkout state", err)
 	}
 	if isDunningRenewal(session) {
 		if err := s.completeDunningRenewal(ctx, tx, session); err != nil {
@@ -86,45 +95,6 @@ func (s *Service) CompletePaidCheckout(ctx context.Context, checkoutID uuid.UUID
 		return fmt.Errorf("commit billing checkout completion: %w", err)
 	}
 	return nil
-}
-
-func (s *Service) lockCheckoutSession(ctx context.Context, tx pgx.Tx, checkoutID uuid.UUID) (*checkout.Session, error) {
-	const query = `
-SELECT id, user_id, customer_id, subscription_id, mode, source, label, amount, currency,
-	client_secret_hash, success_url, return_url, status, expires_at, completed_at, canceled_at,
-	metadata, created_at, updated_at
-FROM checkout_sessions
-WHERE id = $1
-FOR UPDATE`
-
-	session, err := scanCheckoutSession(tx.QueryRow(ctx, query, checkoutID))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrCheckoutNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("lock checkout session for billing completion: %w", err)
-	}
-	return session, nil
-}
-
-func (s *Service) completeCheckoutState(ctx context.Context, tx pgx.Tx, checkoutID uuid.UUID) (*checkout.Session, error) {
-	const query = `
-UPDATE checkout_sessions
-SET status = 'completed', completed_at = COALESCE(completed_at, NOW())
-WHERE id = $1
-  AND status = 'open'
-RETURNING id, user_id, customer_id, subscription_id, mode, source, label, amount, currency,
-	client_secret_hash, success_url, return_url, status, expires_at, completed_at, canceled_at,
-	metadata, created_at, updated_at`
-
-	session, err := scanCheckoutSession(tx.QueryRow(ctx, query, checkoutID))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrCheckoutNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("complete checkout state: %w", err)
-	}
-	return session, nil
 }
 
 func (s *Service) completeDunningRenewal(ctx context.Context, tx pgx.Tx, session *checkout.Session) error {
@@ -288,46 +258,6 @@ DO UPDATE SET
 	return nil
 }
 
-func scanCheckoutSession(row pgx.Row) (*checkout.Session, error) {
-	var session checkout.Session
-	var metadataBytes []byte
-
-	if err := row.Scan(
-		&session.ID,
-		&session.UserID,
-		&session.CustomerID,
-		&session.SubscriptionID,
-		&session.Mode,
-		&session.Source,
-		&session.Label,
-		&session.Amount,
-		&session.Currency,
-		&session.ClientSecretHash,
-		&session.SuccessURL,
-		&session.ReturnURL,
-		&session.Status,
-		&session.ExpiresAt,
-		&session.CompletedAt,
-		&session.CanceledAt,
-		&metadataBytes,
-		&session.CreatedAt,
-		&session.UpdatedAt,
-	); err != nil {
-		return nil, err
-	}
-
-	if len(metadataBytes) > 0 {
-		if err := json.Unmarshal(metadataBytes, &session.Metadata); err != nil {
-			return nil, fmt.Errorf("decode checkout metadata for billing completion: %w", err)
-		}
-	}
-	if session.Metadata == nil {
-		session.Metadata = map[string]any{}
-	}
-
-	return &session, nil
-}
-
 func setDunningTransitionContext(ctx context.Context, tx pgx.Tx, actor, reason string, metadata map[string]any) error {
 	metadataBytes, err := json.Marshal(defaultMetadata(metadata))
 	if err != nil {
@@ -351,6 +281,13 @@ func defaultMetadata(metadata map[string]any) map[string]any {
 		return map[string]any{}
 	}
 	return metadata
+}
+
+func checkoutStateError(action string, err error) error {
+	if errors.Is(err, checkout.ErrNotFound) {
+		return ErrCheckoutNotFound
+	}
+	return fmt.Errorf("%s: %w", action, err)
 }
 
 func isDunningRenewal(session *checkout.Session) bool {
