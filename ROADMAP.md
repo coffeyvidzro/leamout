@@ -38,7 +38,7 @@ Goal: make the existing creator renewal, access, and prepaid usage-credit flows 
 - [x] Fix usage credit consumption idempotency prefix matching.
 - [x] Add tests for Access Check on feature benefits, custom benefits, and meter-credit benefits.
 - [x] Add tests for duplicate usage events so they do not deduct credits twice.
-- [ ] Add concurrency tests for usage credit consumption.
+- [x] Add concurrency tests for usage credit consumption.
 
 ### Renewal and dunning reliability
 
