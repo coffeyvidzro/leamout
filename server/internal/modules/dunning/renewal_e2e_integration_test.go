@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cuffeyvidzro/leamout/internal/modules/benefit"
 	"github.com/cuffeyvidzro/leamout/internal/modules/billing"
 	"github.com/cuffeyvidzro/leamout/internal/modules/checkout"
 	"github.com/cuffeyvidzro/leamout/internal/modules/customer"
@@ -38,11 +39,14 @@ func TestRenewalDunningEndToEnd(t *testing.T) {
 
 	productService := product.NewService(product.NewRepository(pool))
 	customerService := customer.NewService(customer.NewRepository(pool))
-	subscriptionService := subscription.NewService(subscription.NewRepository(pool))
+	subscriptionRepo := subscription.NewRepository(pool)
+	subscriptionService := subscription.NewService(subscriptionRepo)
 	checkoutRepo := checkout.NewRepository(pool)
 	checkoutService := checkout.NewService(checkoutRepo, nil)
+	dunningRepo := NewRepository(pool)
 	billingService := billing.NewService(pool, checkoutRepo, customermeter.NewRepository(pool))
-	dunningService := NewService(NewRepository(pool), checkoutService)
+	billingService.SetCompletionServices(subscriptionRepo, dunningRepo, benefit.NewRepository(pool))
+	dunningService := NewService(dunningRepo, checkoutService)
 
 	interval := price.IntervalMonth
 	createdProduct, err := productService.Create(ctx, userID, product.CreateRequest{

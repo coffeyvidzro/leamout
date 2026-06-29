@@ -1,10 +1,13 @@
 package http
 
 import (
+	"github.com/cuffeyvidzro/leamout/internal/modules/benefit"
 	"github.com/cuffeyvidzro/leamout/internal/modules/billing"
 	"github.com/cuffeyvidzro/leamout/internal/modules/checkout"
 	"github.com/cuffeyvidzro/leamout/internal/modules/customermeter"
+	"github.com/cuffeyvidzro/leamout/internal/modules/dunning"
 	modulepayment "github.com/cuffeyvidzro/leamout/internal/modules/payment"
+	"github.com/cuffeyvidzro/leamout/internal/modules/subscription"
 	"github.com/cuffeyvidzro/leamout/internal/modules/transaction"
 	"github.com/cuffeyvidzro/leamout/internal/modules/wallet"
 	corepayment "github.com/cuffeyvidzro/leamout/internal/payment"
@@ -40,6 +43,9 @@ func (s *Server) buildPaymentStack(
 	checkoutRepo *checkout.Repository,
 	paymentRepo *modulepayment.Repository,
 	customerMeterRepo *customermeter.Repository,
+	subscriptionRepo *subscription.Repository,
+	dunningRepo *dunning.Repository,
+	benefitRepo *benefit.Repository,
 	transactionService *transaction.Service,
 	walletService *wallet.Service,
 ) *paymentStack {
@@ -60,6 +66,7 @@ func (s *Server) buildPaymentStack(
 
 	checkoutService := checkout.NewService(checkoutRepo, paymentService, paymentRouter)
 	billingService := billing.NewService(s.pgPool, checkoutRepo, customerMeterRepo)
+	billingService.SetCompletionServices(subscriptionRepo, dunningRepo, benefitRepo)
 	billingService.SetSettlementServices(transactionService, walletService)
 	paymentService.SetCapturedPaymentSettler(billingService)
 
