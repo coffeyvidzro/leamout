@@ -57,6 +57,22 @@ func (h *Handler) Metrics(c *gin.Context) {
 	c.JSON(http.StatusOK, metrics)
 }
 
+func (h *Handler) Transitions(c *gin.Context) {
+	attemptID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid dunning attempt id"})
+		return
+	}
+
+	transitions, err := h.service.ListAttemptTransitions(c.Request.Context(), middleware.GetUserID(c), attemptID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch dunning transition history"})
+		return
+	}
+
+	c.JSON(http.StatusOK, transitions)
+}
+
 func (h *Handler) Get(c *gin.Context) {
 	attemptID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
