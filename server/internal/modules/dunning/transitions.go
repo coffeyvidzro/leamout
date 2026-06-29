@@ -12,8 +12,7 @@ import (
 )
 
 const (
-	dunningTransitionActorWorker   = "worker"
-	dunningTransitionActorCheckout = "checkout"
+	dunningTransitionActorWorker = "worker"
 
 	dunningTransitionReasonReminderSent = "reminder_sent"
 	dunningTransitionReasonRenewalPaid  = "renewal_paid"
@@ -82,16 +81,16 @@ func (r *Repository) transitionAttemptStatus(ctx context.Context, attemptID uuid
 		return ErrTransitionSkipped
 	}
 
+	if err := setTransitionContext(ctx, tx, strings.TrimSpace(actor), strings.TrimSpace(reason), metadata); err != nil {
+		return err
+	}
+
 	updated, err := r.updateAttemptStatus(ctx, tx, attemptID, next)
 	if err != nil {
 		return err
 	}
 	if updated.Status != next {
 		return ErrTransitionSkipped
-	}
-
-	if err := r.insertAttemptTransition(ctx, tx, attempt.UserID, attempt.ID, strings.TrimSpace(actor), strings.TrimSpace(reason), attempt.Status, updated.Status, metadata); err != nil {
-		return err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -152,26 +151,26 @@ RETURNING id, user_id, subscription_id, customer_id, status, reason, period_end,
 	return attempt, nil
 }
 
-func (r *Repository) insertAttemptTransition(ctx context.Context, tx pgx.Tx, userID, attemptID uuid.UUID, actor, reason string, previous, next AttemptStatus, metadata map[string]any) error {
+func setTransitionContext(ctx context.Context, tx pgx.Tx, actor, reason string, metadata map[string]any) error {
+	if actor == "" {
+		actor = "system"
+	}
+	if reason == "" {
+		reason = "status_update"
+	}
 	metadataBytes, err := encodeJSON(defaultMetadata(metadata))
 	if err != nil {
 		return err
 	}
 
 	const query = `
-INSERT INTO dunning_attempt_transitions (
-	user_id,
-	dunning_attempt_id,
-	actor,
-	reason,
-	previous_status,
-	next_status,
-	metadata
-)
-VALUES ($1, $2, $3, $4, $5, $6, $7)`
+SELECT
+	set_config('leamout.dunning_transition_actor', $1, true),
+	set_config('leamout.dunning_transition_reason', $2, true),
+	set_config('leamout.dunning_transition_metadata', $3, true)`
 
-	if _, err := tx.Exec(ctx, query, userID, attemptID, actor, reason, previous, next, metadataBytes); err != nil {
-		return fmt.Errorf("insert dunning attempt transition: %w", err)
+	if _, err := tx.Exec(ctx, query, actor, reason, string(metadataBytes)); err != nil {
+		return fmt.Errorf("set dunning transition context: %w", err)
 	}
 	return nil
 }
