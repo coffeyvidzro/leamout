@@ -25,6 +25,8 @@ type UsageCreditApplier interface {
 type Service struct {
 	db           *pgxpool.Pool
 	usageCredits UsageCreditApplier
+	transactions TransactionCreator
+	wallet       WalletCreditor
 }
 
 func NewService(db *pgxpool.Pool, usageCredits ...UsageCreditApplier) *Service {
@@ -165,6 +167,13 @@ WHERE s.user_id = $1
 	}
 	if tag.RowsAffected() != 1 {
 		return fmt.Errorf("%w: subscription renewal did not match one active subscription", ErrInvalidCheckoutCompletion)
+	}
+
+	if err := setDunningTransitionContext(ctx, tx, "billing", "renewal_paid", map[string]any{
+		"source":              "billing_checkout_completion",
+		"checkout_session_id": session.ID.String(),
+	}); err != nil {
+		return err
 	}
 
 	const markAttemptPaid = `
@@ -317,6 +326,31 @@ func scanCheckoutSession(row pgx.Row) (*checkout.Session, error) {
 	}
 
 	return &session, nil
+}
+
+func setDunningTransitionContext(ctx context.Context, tx pgx.Tx, actor, reason string, metadata map[string]any) error {
+	metadataBytes, err := json.Marshal(defaultMetadata(metadata))
+	if err != nil {
+		return fmt.Errorf("encode dunning transition metadata: %w", err)
+	}
+
+	const query = `
+SELECT
+	set_config('leamout.dunning_transition_actor', $1, true),
+	set_config('leamout.dunning_transition_reason', $2, true),
+	set_config('leamout.dunning_transition_metadata', $3, true)`
+
+	if _, err := tx.Exec(ctx, query, actor, reason, string(metadataBytes)); err != nil {
+		return fmt.Errorf("set billing dunning transition context: %w", err)
+	}
+	return nil
+}
+
+func defaultMetadata(metadata map[string]any) map[string]any {
+	if metadata == nil {
+		return map[string]any{}
+	}
+	return metadata
 }
 
 func isDunningRenewal(session *checkout.Session) bool {
