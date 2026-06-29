@@ -1,4 +1,4 @@
-package dunning
+package dunning_test
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/cuffeyvidzro/leamout/internal/modules/credits"
+	dunning "github.com/cuffeyvidzro/leamout/internal/modules/dunning"
 	"github.com/cuffeyvidzro/leamout/internal/sms"
 	dunningworkflow "github.com/cuffeyvidzro/leamout/internal/workflows/dunning"
 	"github.com/riverqueue/river"
@@ -47,8 +48,8 @@ func TestSendReminderWorkerRecordsRetryVisibilityAndCancelsAfterThreshold(t *tes
 	if latest.FailureNumber != dunningworkflow.MaxReminderJobFailures {
 		t.Fatalf("expected latest failure number %d, got %d", dunningworkflow.MaxReminderJobFailures, latest.FailureNumber)
 	}
-	if latest.Status != ReminderJobFailureStatusRetryExhausted {
-		t.Fatalf("expected latest failure status %s, got %s", ReminderJobFailureStatusRetryExhausted, latest.Status)
+	if latest.Status != dunning.ReminderJobFailureStatusRetryExhausted {
+		t.Fatalf("expected latest failure status %s, got %s", dunning.ReminderJobFailureStatusRetryExhausted, latest.Status)
 	}
 	if !latest.Retryable {
 		t.Fatal("expected provider timeout failure to be retryable")
@@ -64,15 +65,15 @@ func TestSendReminderWorkerRecordsRetryVisibilityAndCancelsAfterThreshold(t *tes
 	if oldest.FailureNumber != 1 {
 		t.Fatalf("expected first failure number 1, got %d", oldest.FailureNumber)
 	}
-	if oldest.Status != ReminderJobFailureStatusRetryScheduled {
-		t.Fatalf("expected first failure status %s, got %s", ReminderJobFailureStatusRetryScheduled, oldest.Status)
+	if oldest.Status != dunning.ReminderJobFailureStatusRetryScheduled {
+		t.Fatalf("expected first failure status %s, got %s", dunning.ReminderJobFailureStatusRetryScheduled, oldest.Status)
 	}
 
 	attempt, err := fixture.Service.Get(context.Background(), fixture.UserID, fixture.Attempt.ID)
 	if err != nil {
 		t.Fatalf("get dunning attempt: %v", err)
 	}
-	if attempt.Status != AttemptStatusCanceled {
+	if attempt.Status != dunning.AttemptStatusCanceled {
 		t.Fatalf("expected dunning attempt canceled after retry exhaustion, got %s", attempt.Status)
 	}
 	if attempt.CanceledAt == nil {
@@ -106,8 +107,8 @@ func TestSendReminderWorkerRecordsNonRetryableFailureImmediately(t *testing.T) {
 	if failure.FailureNumber != 1 {
 		t.Fatalf("expected failure number 1, got %d", failure.FailureNumber)
 	}
-	if failure.Status != ReminderJobFailureStatusRetryExhausted {
-		t.Fatalf("expected failure status %s, got %s", ReminderJobFailureStatusRetryExhausted, failure.Status)
+	if failure.Status != dunning.ReminderJobFailureStatusRetryExhausted {
+		t.Fatalf("expected failure status %s, got %s", dunning.ReminderJobFailureStatusRetryExhausted, failure.Status)
 	}
 	if failure.Retryable {
 		t.Fatal("expected insufficient credits failure to be non-retryable")
@@ -120,7 +121,7 @@ func TestSendReminderWorkerRecordsNonRetryableFailureImmediately(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get dunning attempt: %v", err)
 	}
-	if attempt.Status != AttemptStatusCanceled {
+	if attempt.Status != dunning.AttemptStatusCanceled {
 		t.Fatalf("expected dunning attempt canceled after non-retryable failure, got %s", attempt.Status)
 	}
 }
