@@ -120,6 +120,7 @@ type RecordReminderJobFailureParams struct {
 	ErrorType        string
 	ErrorMessage     string
 	Retryable        bool
+	MaxFailures      int
 	Metadata         map[string]any
 }
 
