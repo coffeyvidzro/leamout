@@ -42,7 +42,7 @@ Goal: make the existing creator renewal, access, and prepaid usage-credit flows 
 
 ### Renewal and dunning reliability
 
-- [ ] Add an end-to-end test for product creation, recurring price creation, customer creation, subscription creation, dunning scan, SMS reminder, checkout session creation, payment confirmation, subscription renewal, and token revocation.
+- [x] Add an end-to-end test for product creation, recurring price creation, customer creation, subscription creation, dunning scan, SMS reminder, checkout session creation, payment confirmation, subscription renewal, and token revocation.
 - [ ] Add tests for expired, reused, revoked, and malformed dunning tokens.
 - [ ] Add dunning conversion metrics: sent, clicked, checkout started, paid, failed, expired.
 - [ ] Add dunning attempt transition history with actor, reason, previous status, next status, and metadata.
