@@ -112,6 +112,7 @@ func insertDunningMetricsAttempt(t *testing.T, pool *pgxpool.Pool, fixture dunni
 	now := time.Now().UTC()
 	createdAt := now
 	expiresAt := now.Add(24 * time.Hour)
+	periodEnd := now.Add(48*time.Hour + time.Duration(attemptID[0])*time.Second)
 	if expiredTime {
 		createdAt = now.Add(-2 * time.Hour)
 		expiresAt = now.Add(-1 * time.Hour)
@@ -152,12 +153,13 @@ INSERT INTO dunning_attempts (
 	created_at,
 	updated_at
 )
-VALUES ($1, $2, $3, $4, $5, 'renewal_due', NOW() + INTERVAL '2 days', $6, $7, $8, $9, $10, '{}'::jsonb, $11, $11)`,
+VALUES ($1, $2, $3, $4, $5, 'renewal_due', $6, $7, $8, $9, $10, $11, '{}'::jsonb, $12, $12)`,
 		attemptID,
 		fixture.UserID,
 		fixture.SubscriptionID,
 		fixture.CustomerID,
 		status,
+		periodEnd,
 		expiresAt,
 		sentAt,
 		clickedAt,
