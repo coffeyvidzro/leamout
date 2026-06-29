@@ -46,7 +46,7 @@ Goal: make the existing creator renewal, access, and prepaid usage-credit flows 
 - [x] Add tests for expired, reused, revoked, and malformed dunning tokens.
 - [x] Add dunning conversion metrics: sent, clicked, checkout started, paid, failed, expired.
 - [x] Add dunning attempt transition history with actor, reason, previous status, next status, and metadata.
-- [ ] Add dead-letter handling and retry visibility for failed renewal reminder jobs.
+- [x] Add dead-letter handling and retry visibility for failed renewal reminder jobs.
 
 ### Checkout, payment, and subscription safety
 

@@ -57,6 +57,16 @@ func (h *Handler) Metrics(c *gin.Context) {
 	c.JSON(http.StatusOK, metrics)
 }
 
+func (h *Handler) ReminderJobFailures(c *gin.Context) {
+	failures, err := h.service.ListReminderJobFailures(c.Request.Context(), middleware.GetUserID(c))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch dunning reminder job failures"})
+		return
+	}
+
+	c.JSON(http.StatusOK, failures)
+}
+
 func (h *Handler) Transitions(c *gin.Context) {
 	attemptID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
