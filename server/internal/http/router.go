@@ -72,6 +72,9 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 		checkoutRepo,
 		paymentRepo,
 		customerMeterRepo,
+		subscriptionRepo,
+		dunningRepo,
+		benefitRepo,
 		transactionService,
 		walletService,
 	)
