@@ -60,6 +60,18 @@ type ConversionMetrics struct {
 	Expired         int64 `json:"expired"`
 }
 
+type AttemptTransition struct {
+	ID             uuid.UUID      `json:"id"`
+	UserID         uuid.UUID      `json:"user_id"`
+	AttemptID      uuid.UUID      `json:"dunning_attempt_id"`
+	Actor          string         `json:"actor"`
+	Reason         string         `json:"reason"`
+	PreviousStatus AttemptStatus  `json:"previous_status"`
+	NextStatus     AttemptStatus  `json:"next_status"`
+	Metadata       map[string]any `json:"metadata"`
+	CreatedAt      time.Time      `json:"created_at"`
+}
+
 type CreateAttemptParams struct {
 	UserID         uuid.UUID
 	SubscriptionID uuid.UUID
