@@ -104,21 +104,19 @@ FOR UPDATE`
 }
 
 func (r *Repository) applyGrantDebit(ctx context.Context, tx pgx.Tx, userID, grantID, customerID, meterID, usageEventID uuid.UUID, debit, balanceAfter float64, baseIdempotencyKey string) error {
-	status := "active"
-	if balanceAfter <= 0 {
-		status = "depleted"
+	if balanceAfter < 0 {
 		balanceAfter = 0
 	}
 
 	const updateGrant = `
 UPDATE meter_credit_grants
 SET remaining_quantity = $3,
-	status = $4,
+	status = 'active',
 	updated_at = NOW()
 WHERE user_id = $1
   AND id = $2`
 
-	if _, err := tx.Exec(ctx, updateGrant, userID, grantID, balanceAfter, status); err != nil {
+	if _, err := tx.Exec(ctx, updateGrant, userID, grantID, balanceAfter); err != nil {
 		return fmt.Errorf("debit usage credit grant: %w", err)
 	}
 
@@ -167,7 +165,7 @@ WITH totals AS (
 	WHERE user_id = $1
 	  AND customer_id = $2
 	  AND meter_id = $3
-	  AND status IN ('active', 'depleted')
+	  AND status = 'active'
 	  AND (starts_at IS NULL OR starts_at <= NOW())
 	  AND (expires_at IS NULL OR expires_at > NOW())
 	GROUP BY user_id, customer_id, meter_id
