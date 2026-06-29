@@ -19,6 +19,12 @@ const (
 	defaultAttemptTTL = 7 * 24 * time.Hour
 	defaultTokenTTL   = 72 * time.Hour
 	tokenBytes        = 32
+
+	dunningTransitionActorWorker = "worker"
+
+	dunningTransitionReasonReminderSent      = "reminder_sent"
+	dunningTransitionReasonRenewalPaid       = "renewal_paid"
+	dunningTransitionReasonReminderJobFailed = "reminder_job_failed"
 )
 
 var (
@@ -84,6 +90,10 @@ func (s *Service) GetByToken(ctx context.Context, rawToken string) (*TokenWithAt
 
 func (s *Service) GetReminderDetails(ctx context.Context, userID, subscriptionID uuid.UUID) (*ReminderDetails, error) {
 	return s.repository.GetReminderDetails(ctx, userID, subscriptionID)
+}
+
+func (s *Service) GetConversionMetrics(ctx context.Context, userID uuid.UUID) (*ConversionMetrics, error) {
+	return s.repository.GetConversionMetrics(ctx, userID)
 }
 
 func (s *Service) OpenRecoveryLink(ctx context.Context, rawToken string) (*checkout.Session, error) {
@@ -167,6 +177,25 @@ func (s *Service) MarkAttemptPaid(ctx context.Context, attemptID uuid.UUID) erro
 		return err
 	}
 	return s.repository.MarkAttemptPaid(ctx, attemptID)
+}
+
+func (s *Service) MarkAttemptCanceled(ctx context.Context, attemptID uuid.UUID, metadata map[string]any) error {
+	if err := s.validateAttemptTransition(ctx, attemptID, AttemptStatusCanceled); err != nil {
+		return err
+	}
+	return s.repository.MarkAttemptCanceled(ctx, attemptID, metadata)
+}
+
+func (s *Service) RecordReminderJobFailure(ctx context.Context, params RecordReminderJobFailureParams) (*ReminderJobFailure, error) {
+	return s.repository.RecordReminderJobFailure(ctx, params)
+}
+
+func (s *Service) ListReminderJobFailures(ctx context.Context, userID uuid.UUID) ([]ReminderJobFailure, error) {
+	return s.repository.ListReminderJobFailures(ctx, userID)
+}
+
+func (s *Service) ListAttemptTransitions(ctx context.Context, userID, attemptID uuid.UUID) ([]AttemptTransition, error) {
+	return s.repository.ListAttemptTransitions(ctx, userID, attemptID)
 }
 
 func (s *Service) validateAttemptTransition(ctx context.Context, attemptID uuid.UUID, next AttemptStatus) error {
