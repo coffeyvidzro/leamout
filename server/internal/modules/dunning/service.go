@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cuffeyvidzro/leamout/internal/modules/checkout"
+	dunningsm "github.com/cuffeyvidzro/leamout/internal/platform/statemachine/dunning"
 	"github.com/google/uuid"
 )
 
@@ -20,7 +21,10 @@ const (
 	tokenBytes        = 32
 )
 
-var ErrInvalidRecoveryLink = errors.New("invalid or expired recovery link")
+var (
+	ErrInvalidRecoveryLink      = errors.New("invalid or expired recovery link")
+	ErrInvalidDunningTransition = errors.New("invalid dunning transition")
+)
 
 type Service struct {
 	repository      *Repository
@@ -148,6 +152,9 @@ func (s *Service) RevokeAttemptTokens(ctx context.Context, userID, attemptID uui
 }
 
 func (s *Service) MarkAttemptSent(ctx context.Context, attemptID uuid.UUID) error {
+	if err := s.validateAttemptTransition(ctx, attemptID, AttemptStatusSent); err != nil {
+		return err
+	}
 	return s.repository.MarkAttemptSent(ctx, attemptID)
 }
 
@@ -156,7 +163,21 @@ func (s *Service) MarkAttemptClicked(ctx context.Context, attemptID uuid.UUID) e
 }
 
 func (s *Service) MarkAttemptPaid(ctx context.Context, attemptID uuid.UUID) error {
+	if err := s.validateAttemptTransition(ctx, attemptID, AttemptStatusPaid); err != nil {
+		return err
+	}
 	return s.repository.MarkAttemptPaid(ctx, attemptID)
+}
+
+func (s *Service) validateAttemptTransition(ctx context.Context, attemptID uuid.UUID, next AttemptStatus) error {
+	attempt, err := s.repository.GetByID(ctx, attemptID)
+	if err != nil {
+		return err
+	}
+	if err := dunningsm.ValidateTransition(dunningsm.AttemptStatus(attempt.Status), dunningsm.AttemptStatus(next)); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidDunningTransition, err)
+	}
+	return nil
 }
 
 func HashToken(rawToken string) string {
