@@ -8,7 +8,6 @@ import (
 
 	"github.com/cuffeyvidzro/leamout/internal/modules/checkout"
 	"github.com/cuffeyvidzro/leamout/internal/modules/customer"
-	"github.com/cuffeyvidzro/leamout/internal/modules/customermeter"
 	"github.com/cuffeyvidzro/leamout/internal/modules/price"
 	"github.com/cuffeyvidzro/leamout/internal/modules/product"
 	"github.com/cuffeyvidzro/leamout/internal/modules/subscription"
@@ -113,7 +112,7 @@ func createDunningTokenSafetyFixture(t *testing.T) dunningTokenSafetyFixture {
 	productService := product.NewService(product.NewRepository(pool))
 	customerService := customer.NewService(customer.NewRepository(pool))
 	subscriptionService := subscription.NewService(subscription.NewRepository(pool))
-	checkoutRepo := checkout.NewRepository(pool, customermeter.NewRepository(pool))
+	checkoutRepo := checkout.NewRepository(pool)
 	checkoutService := checkout.NewService(checkoutRepo, nil)
 	dunningService := NewService(NewRepository(pool), checkoutService)
 

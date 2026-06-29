@@ -36,8 +36,8 @@ type WalletCreditor interface {
 	CreditPaymentCapture(ctx context.Context, params wallet.CreditPaymentCaptureParams) error
 }
 
-type CheckoutCompleter interface {
-	CompletePaidCheckout(ctx context.Context, checkoutID uuid.UUID) error
+type CapturedPaymentSettler interface {
+	SettleCapturedPayment(ctx context.Context, paymentRecord *Payment) error
 }
 
 type CapturedPaymentSettler interface {
@@ -49,7 +49,6 @@ type Service struct {
 	charger                Charger
 	transactions           TransactionCreator
 	wallet                 WalletCreditor
-	checkoutCompleter      CheckoutCompleter
 	capturedPaymentSettler CapturedPaymentSettler
 }
 
@@ -66,8 +65,8 @@ func (s *Service) SetCharger(charger Charger) {
 	s.charger = charger
 }
 
-func (s *Service) SetCheckoutCompleter(completer CheckoutCompleter) {
-	s.checkoutCompleter = completer
+func (s *Service) SetCapturedPaymentSettler(settler CapturedPaymentSettler) {
+	s.capturedPaymentSettler = settler
 }
 
 func (s *Service) SetCapturedPaymentSettler(settler CapturedPaymentSettler) {
@@ -266,10 +265,6 @@ func (s *Service) settleCapturedPayment(ctx context.Context, paymentRecord *Paym
 		}); err != nil {
 			return err
 		}
-	}
-
-	if s.checkoutCompleter != nil && paymentRecord.CheckoutID != nil {
-		return s.checkoutCompleter.CompletePaidCheckout(ctx, *paymentRecord.CheckoutID)
 	}
 
 	return nil

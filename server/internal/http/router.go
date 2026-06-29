@@ -53,7 +53,7 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 	customerMeterRepo := customermeter.NewRepository(s.pgPool)
 	entitlementRepo := entitlement.NewRepository(s.pgPool)
 	productRepo := product.NewRepository(s.pgPool)
-	checkoutRepo := checkout.NewRepository(s.pgPool, customerMeterRepo)
+	checkoutRepo := checkout.NewRepository(s.pgPool)
 	patRepo := pat.NewRepository(s.pgPool)
 	subscriptionRepo := subscription.NewRepository(s.pgPool)
 	creditsRepo := credits.NewRepository(s.pgPool)

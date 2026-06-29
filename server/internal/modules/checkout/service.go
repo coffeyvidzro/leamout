@@ -200,10 +200,6 @@ func (s *Service) Pay(ctx context.Context, clientSecret string, req PayRequest) 
 	}, nil
 }
 
-func (s *Service) CompletePaidCheckout(ctx context.Context, checkoutID uuid.UUID) error {
-	return s.repository.CompletePaidCheckout(ctx, checkoutID)
-}
-
 func (s *Service) publicCheckoutResponse(ctx context.Context, session *Session, req PublicCheckoutRequest) (*PublicCheckoutResponse, error) {
 	response := &PublicCheckoutResponse{
 		ID:         session.ID,
@@ -260,67 +256,61 @@ func (s *Service) resolveRouteFees(ctx context.Context, session *Session, countr
 		return corepayment.RoutingFees{}, err
 	}
 	if route == nil {
-		return corepayment.RoutingFees{}, errors.New("payment route was not resolved")
+		return corepayment.RoutingFees{}, errors.New("no payment route available")
 	}
-	if route.Fees.TotalFeeBps <= 0 {
-		return corepayment.RoutingFees{}, errors.New("payment route fees are not configured")
-	}
-
 	return route.Fees, nil
 }
 
-func calculateCustomerCheckoutFees(baseAmount int64, fees corepayment.RoutingFees) CheckoutFeeBreakdown {
-	totalFeeBps := fees.TotalFeeBps
-	processingFee := percentageCeil(baseAmount, totalFeeBps)
-	payableAmount := baseAmount + processingFee
+func calculateCustomerCheckoutFees(baseAmount int64, fees corepayment.RoutingFees) FeeBreakdown {
+	mmoFee := basisPointsFee(baseAmount, fees.MMOFeeBps)
+	providerFee := basisPointsFee(baseAmount, fees.ProviderFeeBps)
+	processingFee := mmoFee + providerFee
 
-	return CheckoutFeeBreakdown{
-		FeePayer:       FeePayerCustomer,
+	return FeeBreakdown{
+		FeePayer:       "customer",
 		MMOFeeBps:      fees.MMOFeeBps,
 		ProviderFeeBps: fees.ProviderFeeBps,
-		TotalFeeBps:    totalFeeBps,
+		TotalFeeBps:    fees.TotalFeeBps,
 		BaseAmount:     baseAmount,
 		ProcessingFee:  processingFee,
-		PayableAmount:  payableAmount,
+		PayableAmount:  baseAmount + processingFee,
 		NetAmount:      baseAmount,
 	}
 }
 
-func percentageCeil(amount int64, bps int64) int64 {
+func basisPointsFee(amount int64, bps int) int64 {
 	if amount <= 0 || bps <= 0 {
 		return 0
 	}
-
-	return (amount*bps + 9999) / 10000
-}
-
-func HashClientSecret(clientSecret string) string {
-	sum := sha256.Sum256([]byte(clientSecret))
-	return hex.EncodeToString(sum[:])
+	return (amount*int64(bps) + 9999) / 10000
 }
 
 func newClientSecret() (string, error) {
-	bytes := make([]byte, clientSecretBytes)
-	if _, err := rand.Read(bytes); err != nil {
+	buf := make([]byte, clientSecretBytes)
+	if _, err := rand.Read(buf); err != nil {
 		return "", err
 	}
-	return base64.RawURLEncoding.EncodeToString(bytes), nil
+	return "lmt_checkout_" + base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
-func normalizeCurrency(value string) string {
-	return strings.ToUpper(strings.TrimSpace(value))
+func HashClientSecret(secret string) string {
+	sum := sha256.Sum256([]byte(secret))
+	return hex.EncodeToString(sum[:])
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value != "" {
-			return value
-		}
-	}
-	return ""
+func normalizeCurrency(currency string) string {
+	return strings.ToUpper(strings.TrimSpace(currency))
 }
 
 func stringPointer(value string) *string {
 	return &value
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
