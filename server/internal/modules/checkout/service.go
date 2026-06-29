@@ -228,7 +228,7 @@ func (s *Service) publicCheckoutResponse(ctx context.Context, session *Session, 
 
 	routingFees, err := s.resolveRouteFees(ctx, session, country, network)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalidPaymentRequest)
+		return nil, fmt.Errorf("%w: %v", ErrInvalidPaymentRequest, err)
 	}
 
 	fee := calculateCustomerCheckoutFees(session.Amount, routingFees)
