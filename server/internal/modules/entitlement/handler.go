@@ -31,7 +31,7 @@ func (h *Handler) Check(c *gin.Context) {
 
 func respondCheck(c *gin.Context, response *CheckResponse, err error) {
 	if errors.Is(err, ErrInvalidCheck) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "provide exactly one of customer_id or external_customer_id, plus a benefit code"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "provide exactly one of customer_id or external_customer_id, plus an access code"})
 		return
 	}
 	if errors.Is(err, ErrCustomerNotFound) {
@@ -39,7 +39,7 @@ func respondCheck(c *gin.Context, response *CheckResponse, err error) {
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check entitlement"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check access"})
 		return
 	}
 
