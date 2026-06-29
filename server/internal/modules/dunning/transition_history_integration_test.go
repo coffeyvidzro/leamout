@@ -1,9 +1,10 @@
-package dunning
+package dunning_test
 
 import (
 	"context"
 	"testing"
 
+	dunning "github.com/cuffeyvidzro/leamout/internal/modules/dunning"
 	"github.com/google/uuid"
 )
 
@@ -25,12 +26,12 @@ func TestDunningStatusTransitionsWriteHistory(t *testing.T) {
 		t.Fatalf("expected two dunning transitions, got %d", len(transitions))
 	}
 
-	assertDunningTransition(t, transitions[0], dunningTransitionActorWorker, dunningTransitionReasonReminderSent, AttemptStatusPending, AttemptStatusSent)
+	assertDunningTransition(t, transitions[0], "worker", "reminder_sent", dunning.AttemptStatusPending, dunning.AttemptStatusSent)
 	if transitions[0].Metadata["source"] != "dunning_reminder_worker" {
 		t.Fatalf("expected sent transition source dunning_reminder_worker, got %v", transitions[0].Metadata["source"])
 	}
 
-	assertDunningTransition(t, transitions[1], "system", dunningTransitionReasonRenewalPaid, AttemptStatusSent, AttemptStatusPaid)
+	assertDunningTransition(t, transitions[1], "system", "renewal_paid", dunning.AttemptStatusSent, dunning.AttemptStatusPaid)
 	if transitions[1].Metadata["source"] != "dunning_service" {
 		t.Fatalf("expected paid transition source dunning_service, got %v", transitions[1].Metadata["source"])
 	}
@@ -53,7 +54,7 @@ func TestDunningSameStatusTransitionDoesNotDuplicateHistory(t *testing.T) {
 	if len(transitions) != 1 {
 		t.Fatalf("expected one dunning transition after repeated sent call, got %d", len(transitions))
 	}
-	assertDunningTransition(t, transitions[0], dunningTransitionActorWorker, dunningTransitionReasonReminderSent, AttemptStatusPending, AttemptStatusSent)
+	assertDunningTransition(t, transitions[0], "worker", "reminder_sent", dunning.AttemptStatusPending, dunning.AttemptStatusSent)
 }
 
 func TestDunningDirectStatusUpdateWritesDefaultHistory(t *testing.T) {
@@ -77,10 +78,10 @@ WHERE user_id = $1
 	if len(transitions) != 1 {
 		t.Fatalf("expected one dunning transition after direct update, got %d", len(transitions))
 	}
-	assertDunningTransition(t, transitions[0], "system", "status_update", AttemptStatusPending, AttemptStatusPaid)
+	assertDunningTransition(t, transitions[0], "system", "status_update", dunning.AttemptStatusPending, dunning.AttemptStatusPaid)
 }
 
-func assertDunningTransition(t *testing.T, transition AttemptTransition, actor, reason string, previous, next AttemptStatus) {
+func assertDunningTransition(t *testing.T, transition dunning.AttemptTransition, actor, reason string, previous, next dunning.AttemptStatus) {
 	t.Helper()
 
 	if transition.ID == uuid.Nil {
