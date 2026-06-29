@@ -1,7 +1,9 @@
 package http
 
 import (
+	"github.com/cuffeyvidzro/leamout/internal/modules/billing"
 	"github.com/cuffeyvidzro/leamout/internal/modules/checkout"
+	"github.com/cuffeyvidzro/leamout/internal/modules/customermeter"
 	modulepayment "github.com/cuffeyvidzro/leamout/internal/modules/payment"
 	"github.com/cuffeyvidzro/leamout/internal/modules/transaction"
 	"github.com/cuffeyvidzro/leamout/internal/modules/wallet"
@@ -16,6 +18,7 @@ type paymentStack struct {
 	PaymentHandler  *modulepayment.Handler
 	CheckoutService *checkout.Service
 	CheckoutHandler *checkout.Handler
+	BillingService  *billing.Service
 }
 
 func (s *Server) paymentProviders() map[corepayment.ProviderName]corepayment.ChargeProvider {
@@ -36,6 +39,7 @@ func (s *Server) paymentProviders() map[corepayment.ProviderName]corepayment.Cha
 func (s *Server) buildPaymentStack(
 	checkoutRepo *checkout.Repository,
 	paymentRepo *modulepayment.Repository,
+	customerMeterRepo *customermeter.Repository,
 	transactionService *transaction.Service,
 	walletService *wallet.Service,
 ) *paymentStack {
@@ -54,14 +58,15 @@ func (s *Server) buildPaymentStack(
 		walletService,
 	)
 
-	// checkoutService := checkout.NewService(checkoutRepo, paymentService)
 	checkoutService := checkout.NewService(checkoutRepo, paymentService, paymentRouter)
-	paymentService.SetCheckoutCompleter(checkoutService)
+	billingService := billing.NewService(s.pgPool, customerMeterRepo)
+	paymentService.SetCheckoutCompleter(billingService)
 
 	return &paymentStack{
 		PaymentService:  paymentService,
 		PaymentHandler:  modulepayment.NewHandler(paymentService),
 		CheckoutService: checkoutService,
 		CheckoutHandler: checkout.NewHandler(checkoutService),
+		BillingService:  billingService,
 	}
 }
