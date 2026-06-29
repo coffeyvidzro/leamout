@@ -2,6 +2,7 @@ package dunning
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -193,22 +194,16 @@ func scanAttemptTransition(row pgx.Row) (*AttemptTransition, error) {
 		return nil, err
 	}
 
-	if err := decodeTransitionMetadata(metadataBytes, &transition); err != nil {
-		return nil, err
-	}
-	return &transition, nil
-}
-
-func decodeTransitionMetadata(metadataBytes []byte, transition *AttemptTransition) error {
 	if len(metadataBytes) > 0 {
-		if err := jsonUnmarshal(metadataBytes, &transition.Metadata); err != nil {
-			return fmt.Errorf("decode dunning transition metadata: %w", err)
+		if err := json.Unmarshal(metadataBytes, &transition.Metadata); err != nil {
+			return nil, fmt.Errorf("decode dunning transition metadata: %w", err)
 		}
 	}
 	if transition.Metadata == nil {
 		transition.Metadata = map[string]any{}
 	}
-	return nil
+
+	return &transition, nil
 }
 
 func statusIn(status AttemptStatus, statuses []AttemptStatus) bool {
