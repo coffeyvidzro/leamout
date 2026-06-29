@@ -47,6 +47,16 @@ func (h *Handler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, attempts)
 }
 
+func (h *Handler) Metrics(c *gin.Context) {
+	metrics, err := h.service.GetConversionMetrics(c.Request.Context(), middleware.GetUserID(c))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch dunning metrics"})
+		return
+	}
+
+	c.JSON(http.StatusOK, metrics)
+}
+
 func (h *Handler) Get(c *gin.Context) {
 	attemptID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
