@@ -40,6 +40,10 @@ type CapturedPaymentSettler interface {
 	SettleCapturedPayment(ctx context.Context, paymentRecord *Payment) error
 }
 
+type CapturedPaymentSettler interface {
+	SettleCapturedPayment(ctx context.Context, paymentRecord *Payment) error
+}
+
 type Service struct {
 	repository             *Repository
 	charger                Charger
@@ -59,6 +63,10 @@ func NewService(repository *Repository, charger Charger, transactions Transactio
 
 func (s *Service) SetCharger(charger Charger) {
 	s.charger = charger
+}
+
+func (s *Service) SetCapturedPaymentSettler(settler CapturedPaymentSettler) {
+	s.capturedPaymentSettler = settler
 }
 
 func (s *Service) SetCapturedPaymentSettler(settler CapturedPaymentSettler) {
