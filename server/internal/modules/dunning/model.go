@@ -10,6 +10,8 @@ type AttemptStatus string
 
 type AttemptReason string
 
+type ReminderJobFailureStatus string
+
 const (
 	AttemptStatusPending  AttemptStatus = "pending"
 	AttemptStatusSent     AttemptStatus = "sent"
@@ -19,6 +21,9 @@ const (
 
 	AttemptReasonRenewalDue    AttemptReason = "renewal_due"
 	AttemptReasonPaymentFailed AttemptReason = "payment_failed"
+
+	ReminderJobFailureStatusRetryScheduled ReminderJobFailureStatus = "retry_scheduled"
+	ReminderJobFailureStatusRetryExhausted ReminderJobFailureStatus = "retry_exhausted"
 )
 
 type Attempt struct {
@@ -72,6 +77,22 @@ type AttemptTransition struct {
 	CreatedAt      time.Time      `json:"created_at"`
 }
 
+type ReminderJobFailure struct {
+	ID               uuid.UUID                `json:"id"`
+	UserID           uuid.UUID                `json:"user_id"`
+	SubscriptionID   uuid.UUID                `json:"subscription_id"`
+	CustomerID       uuid.UUID                `json:"customer_id"`
+	AttemptID        *uuid.UUID               `json:"dunning_attempt_id,omitempty"`
+	CurrentPeriodEnd time.Time                `json:"current_period_end"`
+	FailureNumber    int                      `json:"failure_number"`
+	Status           ReminderJobFailureStatus `json:"status"`
+	ErrorType        string                   `json:"error_type"`
+	ErrorMessage     string                   `json:"error_message"`
+	Retryable        bool                     `json:"retryable"`
+	Metadata         map[string]any           `json:"metadata"`
+	CreatedAt        time.Time                `json:"created_at"`
+}
+
 type CreateAttemptParams struct {
 	UserID         uuid.UUID
 	SubscriptionID uuid.UUID
@@ -87,6 +108,19 @@ type CreateTokenParams struct {
 	DunningAttemptID uuid.UUID
 	TokenHash        string
 	ExpiresAt        time.Time
+}
+
+type RecordReminderJobFailureParams struct {
+	UserID           uuid.UUID
+	SubscriptionID   uuid.UUID
+	CustomerID       uuid.UUID
+	AttemptID        *uuid.UUID
+	CurrentPeriodEnd time.Time
+	Status           ReminderJobFailureStatus
+	ErrorType        string
+	ErrorMessage     string
+	Retryable        bool
+	Metadata         map[string]any
 }
 
 type TokenWithAttempt struct {
