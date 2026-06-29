@@ -58,11 +58,15 @@ SELECT EXISTS (
 	SELECT 1
 	FROM meter_credit_ledger_entries
 	WHERE user_id = $1
-	  AND idempotency_key LIKE $2
+	  AND (
+		idempotency_key = $2
+		OR idempotency_key LIKE $3
+	  )
 )`
 
 	var exists bool
-	if err := tx.QueryRow(ctx, query, userID, idempotencyKey+"%").Scan(&exists); err != nil {
+	grantEntryPattern := idempotencyKey + ":grant:%"
+	if err := tx.QueryRow(ctx, query, userID, idempotencyKey, grantEntryPattern).Scan(&exists); err != nil {
 		return false, fmt.Errorf("check usage credit idempotency: %w", err)
 	}
 	return exists, nil
