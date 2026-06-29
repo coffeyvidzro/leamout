@@ -41,7 +41,7 @@ func TestRenewalDunningEndToEnd(t *testing.T) {
 	subscriptionService := subscription.NewService(subscription.NewRepository(pool))
 	checkoutRepo := checkout.NewRepository(pool)
 	checkoutService := checkout.NewService(checkoutRepo, nil)
-	billingService := billing.NewService(pool, customermeter.NewRepository(pool))
+	billingService := billing.NewService(pool, checkoutRepo, customermeter.NewRepository(pool))
 	dunningService := NewService(NewRepository(pool), checkoutService)
 
 	interval := price.IntervalMonth
