@@ -40,8 +40,9 @@ CREATE INDEX idx_dunning_attempt_transitions_user_created
 CREATE INDEX idx_dunning_attempt_transitions_metadata
     ON dunning_attempt_transitions USING GIN (metadata);
 
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION record_dunning_attempt_transition()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $record_dunning_attempt_transition$
 DECLARE
     transition_actor TEXT;
     transition_reason TEXT;
@@ -75,7 +76,8 @@ BEGIN
 
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$record_dunning_attempt_transition$ LANGUAGE plpgsql;
+-- +goose StatementEnd
 
 CREATE TRIGGER dunning_attempts_record_transition
 AFTER UPDATE OF status ON dunning_attempts
