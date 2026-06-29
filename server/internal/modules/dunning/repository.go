@@ -15,6 +15,7 @@ import (
 var (
 	ErrNotFound          = errors.New("dunning record not found")
 	ErrActiveTokenExists = errors.New("active dunning token already exists")
+	ErrTransitionSkipped = errors.New("dunning transition skipped")
 )
 
 type Repository struct {
@@ -91,6 +92,24 @@ WHERE user_id = $1 AND id = $2`
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get dunning attempt: %w", err)
+	}
+
+	return attempt, nil
+}
+
+func (r *Repository) GetByID(ctx context.Context, attemptID uuid.UUID) (*Attempt, error) {
+	const query = `
+SELECT id, user_id, subscription_id, customer_id, status, reason, period_end, expires_at,
+	sent_at, clicked_at, paid_at, canceled_at, metadata, created_at, updated_at
+FROM dunning_attempts
+WHERE id = $1`
+
+	attempt, err := scanAttempt(r.db.QueryRow(ctx, query, attemptID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get dunning attempt by id: %w", err)
 	}
 
 	return attempt, nil
@@ -226,8 +245,14 @@ func (r *Repository) RevokeAttemptTokens(ctx context.Context, userID, attemptID 
 
 func (r *Repository) MarkAttemptSent(ctx context.Context, attemptID uuid.UUID) error {
 	const query = `UPDATE dunning_attempts SET status = 'sent', sent_at = COALESCE(sent_at, NOW()) WHERE id = $1 AND status IN ('pending', 'sent')`
-	_, err := r.db.Exec(ctx, query, attemptID)
-	return err
+	result, err := r.db.Exec(ctx, query, attemptID)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return ErrTransitionSkipped
+	}
+	return nil
 }
 
 func (r *Repository) MarkAttemptClicked(ctx context.Context, attemptID uuid.UUID) error {
@@ -238,8 +263,14 @@ func (r *Repository) MarkAttemptClicked(ctx context.Context, attemptID uuid.UUID
 
 func (r *Repository) MarkAttemptPaid(ctx context.Context, attemptID uuid.UUID) error {
 	const query = `UPDATE dunning_attempts SET status = 'paid', sent_at = COALESCE(sent_at, NOW()), paid_at = COALESCE(paid_at, NOW()) WHERE id = $1 AND status IN ('pending', 'sent', 'paid')`
-	_, err := r.db.Exec(ctx, query, attemptID)
-	return err
+	result, err := r.db.Exec(ctx, query, attemptID)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return ErrTransitionSkipped
+	}
+	return nil
 }
 
 func (r *Repository) findReusableAttempt(ctx context.Context, params CreateAttemptParams) (*Attempt, error) {

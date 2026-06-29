@@ -38,8 +38,8 @@ func (s *Service) Update(ctx context.Context, userID, id uuid.UUID, req UpdateRe
 		if err != nil {
 			return nil, err
 		}
-		if !subscriptionsm.CanTransition(subscriptionsm.Status(subscription.Status), subscriptionsm.Status(*req.Status)) {
-			return nil, fmt.Errorf("%w: cannot transition subscription from %s to %s", ErrInvalidSubscription, subscription.Status, *req.Status)
+		if err := subscriptionsm.ValidateTransition(subscriptionsm.Status(subscription.Status), subscriptionsm.Status(*req.Status)); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrInvalidSubscription, err)
 		}
 	}
 

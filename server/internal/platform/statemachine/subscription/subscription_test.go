@@ -13,3 +13,12 @@ func TestCanTransition(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateTransition(t *testing.T) {
+	if err := ValidateTransition(Active, PastDue); err != nil {
+		t.Fatalf("expected allowed transition: %v", err)
+	}
+	if err := ValidateTransition(Canceled, Active); err == nil {
+		t.Fatal("expected invalid transition error")
+	}
+}

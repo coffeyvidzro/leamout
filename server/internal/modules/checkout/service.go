@@ -119,8 +119,8 @@ func (s *Service) Update(ctx context.Context, userID, id uuid.UUID, req UpdateRe
 		if err != nil {
 			return nil, err
 		}
-		if !checkoutsm.CanTransition(checkoutsm.Status(session.Status), checkoutsm.Status(*req.Status)) {
-			return nil, fmt.Errorf("%w: cannot transition checkout from %s to %s", ErrInvalidCheckoutRequest, session.Status, *req.Status)
+		if err := checkoutsm.ValidateTransition(checkoutsm.Status(session.Status), checkoutsm.Status(*req.Status)); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrInvalidCheckoutRequest, err)
 		}
 	}
 

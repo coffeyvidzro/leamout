@@ -185,8 +185,8 @@ func (s *Service) ApplyProviderResult(ctx context.Context, params UpdateFromProv
 	if err != nil {
 		return nil, err
 	}
-	if !paymentsm.CanTransition(paymentsm.Status(currentPayment.Status), paymentsm.Status(params.Status)) {
-		return nil, fmt.Errorf("%w: cannot transition payment from %s to %s", ErrInvalidPayment, currentPayment.Status, params.Status)
+	if err := paymentsm.ValidateTransition(paymentsm.Status(currentPayment.Status), paymentsm.Status(params.Status)); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidPayment, err)
 	}
 
 	paymentRecord, err := s.repository.UpdateFromProvider(ctx, params)

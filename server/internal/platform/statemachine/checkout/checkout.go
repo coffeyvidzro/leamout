@@ -1,5 +1,7 @@
 package checkout
 
+import "fmt"
+
 type Status string
 
 const (
@@ -26,6 +28,13 @@ func CanTransition(from, to Status) bool {
 	}
 	_, ok = allowed[to]
 	return ok
+}
+
+func ValidateTransition(from, to Status) error {
+	if CanTransition(from, to) {
+		return nil
+	}
+	return fmt.Errorf("invalid checkout transition from %s to %s", from, to)
 }
 
 func Terminal(status Status) bool {

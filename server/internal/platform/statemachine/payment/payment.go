@@ -1,5 +1,7 @@
 package payment
 
+import "fmt"
+
 type Status string
 
 const (
@@ -32,9 +34,14 @@ func CanTransition(from, to Status) bool {
 	return ok
 }
 
-func Terminal(status Status) bool {
-	return status == Failed || status == Refunded || status == Voided
+func ValidateTransition(from, to Status) error {
+	if CanTransition(from, to) {
+		return nil
+	}
+	return fmt.Errorf("invalid payment transition from %s to %s", from, to)
 }
+
+func Terminal(status Status) bool { return status == Failed || status == Refunded || status == Voided }
 
 func allow(statuses ...Status) map[Status]struct{} {
 	m := make(map[Status]struct{}, len(statuses))

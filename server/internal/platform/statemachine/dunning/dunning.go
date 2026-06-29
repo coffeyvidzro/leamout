@@ -1,5 +1,7 @@
 package dunning
 
+import "fmt"
+
 type AttemptStatus string
 
 const (
@@ -28,6 +30,13 @@ func CanTransition(from, to AttemptStatus) bool {
 	}
 	_, ok = allowed[to]
 	return ok
+}
+
+func ValidateTransition(from, to AttemptStatus) error {
+	if CanTransition(from, to) {
+		return nil
+	}
+	return fmt.Errorf("invalid dunning transition from %s to %s", from, to)
 }
 
 func Terminal(status AttemptStatus) bool {
