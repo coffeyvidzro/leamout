@@ -71,6 +71,7 @@ func (s *Server) BuildEngine() (*gin.Engine, error) {
 	paymentStack := s.buildPaymentStack(
 		checkoutRepo,
 		paymentRepo,
+		customerMeterRepo,
 		transactionService,
 		walletService,
 	)
