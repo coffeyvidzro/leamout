@@ -32,6 +32,19 @@ func (r *Repository) ConsumeUsageEvent(ctx context.Context, tx pgx.Tx, userID, c
 		return err
 	}
 
+	// Recheck after locking grants. Without this, two concurrent workers using the
+	// same idempotency key can both pass the first check before either commits.
+	// The second worker would then wait on FOR UPDATE, debit the grant after the
+	// first worker commits, and silently skip the ledger insert because of the
+	// idempotency unique index.
+	alreadyConsumed, err = r.hasLedgerEntry(ctx, tx, userID, idempotencyKey)
+	if err != nil {
+		return err
+	}
+	if alreadyConsumed {
+		return nil
+	}
+
 	remainingToConsume := quantity
 	for _, grant := range grants {
 		if remainingToConsume <= 0 {
