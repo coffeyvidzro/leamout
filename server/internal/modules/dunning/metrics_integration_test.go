@@ -1,4 +1,4 @@
-package dunning
+package dunning_test
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	dunning "github.com/cuffeyvidzro/leamout/internal/modules/dunning"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -15,22 +16,22 @@ func TestGetConversionMetrics(t *testing.T) {
 	pool := openRenewalDunningTestDB(t)
 	userID := createRenewalDunningTestUser(t, pool)
 	fixture := createDunningMetricsFixture(t, pool, userID)
-	repository := NewRepository(pool)
+	repository := dunning.NewRepository(pool)
 
-	insertDunningMetricsAttempt(t, pool, fixture, AttemptStatusSent, false, false)
-	insertDunningMetricsAttempt(t, pool, fixture, AttemptStatusSent, true, false)
-	checkoutStartedAttemptID := insertDunningMetricsAttempt(t, pool, fixture, AttemptStatusSent, true, false)
+	insertDunningMetricsAttempt(t, pool, fixture, dunning.AttemptStatusSent, false, false)
+	insertDunningMetricsAttempt(t, pool, fixture, dunning.AttemptStatusSent, true, false)
+	checkoutStartedAttemptID := insertDunningMetricsAttempt(t, pool, fixture, dunning.AttemptStatusSent, true, false)
 	insertDunningMetricsCheckout(t, pool, fixture, checkoutStartedAttemptID)
-	insertDunningMetricsAttempt(t, pool, fixture, AttemptStatusPaid, false, false)
-	insertDunningMetricsAttempt(t, pool, fixture, AttemptStatusCanceled, false, false)
-	insertDunningMetricsAttempt(t, pool, fixture, AttemptStatusExpired, false, true)
+	insertDunningMetricsAttempt(t, pool, fixture, dunning.AttemptStatusPaid, false, false)
+	insertDunningMetricsAttempt(t, pool, fixture, dunning.AttemptStatusCanceled, false, false)
+	insertDunningMetricsAttempt(t, pool, fixture, dunning.AttemptStatusExpired, false, true)
 
 	metrics, err := repository.GetConversionMetrics(ctx, userID)
 	if err != nil {
 		t.Fatalf("get dunning conversion metrics: %v", err)
 	}
 
-	assertConversionMetrics(t, metrics, ConversionMetrics{
+	assertConversionMetrics(t, metrics, dunning.ConversionMetrics{
 		Sent:            4,
 		Clicked:         2,
 		CheckoutStarted: 1,
@@ -102,7 +103,7 @@ VALUES ($1, $2, $3, $4, 'active', NOW() - INTERVAL '28 days', NOW() + INTERVAL '
 	return fixture
 }
 
-func insertDunningMetricsAttempt(t *testing.T, pool *pgxpool.Pool, fixture dunningMetricsFixture, status AttemptStatus, clicked bool, expiredTime bool) uuid.UUID {
+func insertDunningMetricsAttempt(t *testing.T, pool *pgxpool.Pool, fixture dunningMetricsFixture, status dunning.AttemptStatus, clicked bool, expiredTime bool) uuid.UUID {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -122,16 +123,16 @@ func insertDunningMetricsAttempt(t *testing.T, pool *pgxpool.Pool, fixture dunni
 	var clickedAt any
 	var paidAt any
 	var canceledAt any
-	if status == AttemptStatusSent || status == AttemptStatusPaid {
+	if status == dunning.AttemptStatusSent || status == dunning.AttemptStatusPaid {
 		sentAt = now
 	}
 	if clicked {
 		clickedAt = now
 	}
-	if status == AttemptStatusPaid {
+	if status == dunning.AttemptStatusPaid {
 		paidAt = now
 	}
-	if status == AttemptStatusCanceled {
+	if status == dunning.AttemptStatusCanceled {
 		canceledAt = now
 	}
 
@@ -206,7 +207,7 @@ VALUES ($1, $2, $3, 'renewal', 'dunning', 'Renew subscription', 5000, 'GHS', $4,
 	}
 }
 
-func assertConversionMetrics(t *testing.T, actual *ConversionMetrics, expected ConversionMetrics) {
+func assertConversionMetrics(t *testing.T, actual *dunning.ConversionMetrics, expected dunning.ConversionMetrics) {
 	t.Helper()
 
 	if actual == nil {
