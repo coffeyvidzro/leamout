@@ -40,12 +40,17 @@ type CheckoutCompleter interface {
 	CompletePaidCheckout(ctx context.Context, checkoutID uuid.UUID) error
 }
 
+type CapturedPaymentSettler interface {
+	SettleCapturedPayment(ctx context.Context, paymentRecord *Payment) error
+}
+
 type Service struct {
-	repository        *Repository
-	charger           Charger
-	transactions      TransactionCreator
-	wallet            WalletCreditor
-	checkoutCompleter CheckoutCompleter
+	repository             *Repository
+	charger                Charger
+	transactions           TransactionCreator
+	wallet                 WalletCreditor
+	checkoutCompleter      CheckoutCompleter
+	capturedPaymentSettler CapturedPaymentSettler
 }
 
 func NewService(repository *Repository, charger Charger, transactions TransactionCreator, wallet WalletCreditor) *Service {
@@ -63,6 +68,10 @@ func (s *Service) SetCharger(charger Charger) {
 
 func (s *Service) SetCheckoutCompleter(completer CheckoutCompleter) {
 	s.checkoutCompleter = completer
+}
+
+func (s *Service) SetCapturedPaymentSettler(settler CapturedPaymentSettler) {
+	s.capturedPaymentSettler = settler
 }
 
 // Charge starts a checkout payment through the internal payment orchestration layer
@@ -215,6 +224,9 @@ func (s *Service) settleCapturedPayment(ctx context.Context, paymentRecord *Paym
 	if paymentRecord == nil || paymentRecord.Status != StatusCaptured {
 		return nil
 	}
+	if s.capturedPaymentSettler != nil {
+		return s.capturedPaymentSettler.SettleCapturedPayment(ctx, paymentRecord)
+	}
 
 	var transactionRecord *transaction.Transaction
 	var err error
@@ -338,10 +350,7 @@ func parseAmount(value string) (int64, error) {
 	}
 
 	amount, err := strconv.ParseInt(value, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("%w: invalid amount", ErrInvalidPayment)
-	}
-	if amount <= 0 {
+	if err != nil || amount <= 0 {
 		return 0, fmt.Errorf("%w: amount must be greater than zero", ErrInvalidPayment)
 	}
 
@@ -352,51 +361,32 @@ func normalizeCorePayload(payload corepayment.UnifiedPayload) corepayment.Unifie
 	payload.TransactionID = strings.TrimSpace(payload.TransactionID)
 	payload.Country = strings.ToUpper(strings.TrimSpace(payload.Country))
 	payload.Network = strings.ToUpper(strings.TrimSpace(payload.Network))
-	payload.PhoneNumber = strings.TrimPrefix(strings.TrimSpace(payload.PhoneNumber), "+")
+	payload.PhoneNumber = strings.TrimSpace(payload.PhoneNumber)
 	payload.Amount = strings.TrimSpace(payload.Amount)
 	payload.Currency = strings.ToUpper(strings.TrimSpace(payload.Currency))
-	payload.Operator = strings.TrimSpace(payload.Operator)
-
 	if payload.Metadata == nil {
 		payload.Metadata = map[string]string{}
 	}
-
 	return payload
 }
 
-func statusFromCore(status corepayment.PaymentStatus) Status {
-	switch status {
-	case corepayment.PaymentStatusSucceeded:
-		return StatusCaptured
-	case corepayment.PaymentStatusFailed:
-		return StatusFailed
-	default:
-		return StatusPending
+func paymentMetadata(payload corepayment.UnifiedPayload, result *corepayment.ChargeResult, paymentCtx *checkoutPaymentContext, feeAmount int64) map[string]any {
+	metadata := map[string]any{
+		"provider_status":     string(result.Status),
+		"payment_country":     payload.Country,
+		"payment_network":     payload.Network,
+		"checkout_session_id": paymentCtx.CheckoutID.String(),
+		"checkout_fee_amount": feeAmount,
 	}
-}
 
-func attemptStatusFromCore(status corepayment.PaymentStatus) AttemptStatus {
-	switch status {
-	case corepayment.PaymentStatusSucceeded:
-		return AttemptStatusSucceeded
-	case corepayment.PaymentStatusFailed:
-		return AttemptStatusFailed
-	default:
-		return AttemptStatusProcessing
+	if paymentCtx.CustomerID != nil {
+		metadata["checkout_customer_id"] = paymentCtx.CustomerID.String()
 	}
-}
+	if result.ProviderReference != "" {
+		metadata["provider_reference"] = result.ProviderReference
+	}
 
-func attemptStatusFromPayment(status Status) AttemptStatus {
-	switch status {
-	case StatusCaptured:
-		return AttemptStatusSucceeded
-	case StatusFailed:
-		return AttemptStatusFailed
-	case StatusVoided:
-		return AttemptStatusCanceled
-	default:
-		return AttemptStatusProcessing
-	}
+	return metadata
 }
 
 func attemptRequest(payload corepayment.UnifiedPayload) map[string]any {
@@ -407,8 +397,6 @@ func attemptRequest(payload corepayment.UnifiedPayload) map[string]any {
 		"phone_number":   payload.PhoneNumber,
 		"amount":         payload.Amount,
 		"currency":       payload.Currency,
-		"operator":       payload.Operator,
-		"provider":       string(payload.Provider),
 	}
 }
 
@@ -416,52 +404,75 @@ func attemptResponse(result *corepayment.ChargeResult) map[string]any {
 	if result == nil {
 		return map[string]any{}
 	}
-
 	return map[string]any{
-		"transaction_id":     result.TransactionID,
-		"provider":           string(result.Provider),
-		"provider_reference": result.ProviderReference,
-		"status":             string(result.Status),
-		"message":            result.Message,
-		"created_at":         result.CreatedAt,
+		"transaction_id":      result.TransactionID,
+		"provider":            result.Provider,
+		"provider_reference":  result.ProviderReference,
+		"status":              result.Status,
+		"message":             result.Message,
+		"customer_message":    result.CustomerMessage,
+		"provider_response_id": result.ProviderResponseID,
 	}
 }
 
-func paymentMetadata(
-	payload corepayment.UnifiedPayload,
-	result *corepayment.ChargeResult,
-	paymentCtx *checkoutPaymentContext,
-	feeAmount int64,
-) map[string]any {
-	metadata := map[string]any{
-		"checkout_session_id":    paymentCtx.CheckoutID.String(),
-		"payment_transaction_id": result.TransactionID,
-		"payment_provider":       string(result.Provider),
-		"payment_status":         string(result.Status),
-		"payment_country":        payload.Country,
-		"payment_network":        payload.Network,
-		"payment_currency":       payload.Currency,
-		"payment_phone":          payload.PhoneNumber,
-		"payment_amount":         payload.Amount,
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
 	}
+	return ""
+}
 
-	if paymentCtx.CustomerID != nil {
-		metadata["checkout_customer_id"] = paymentCtx.CustomerID.String()
+func statusFromCore(status corepayment.PaymentStatus) Status {
+	switch status {
+	case corepayment.PaymentStatusCaptured:
+		return StatusCaptured
+	case corepayment.PaymentStatusFailed:
+		return StatusFailed
+	case corepayment.PaymentStatusAuthorized:
+		return StatusAuthorized
+	case corepayment.PaymentStatusVoided:
+		return StatusVoided
+	case corepayment.PaymentStatusRefunded:
+		return StatusRefunded
+	default:
+		return StatusPending
 	}
-	if feeAmount > 0 {
-		metadata["payment_fee_amount"] = feeAmount
-	}
-	if result.ProviderReference != "" {
-		metadata["payment_provider_reference"] = result.ProviderReference
-	}
-	if result.Message != "" {
-		metadata["payment_message"] = result.Message
-	}
+}
 
-	return metadata
+func attemptStatusFromCore(status corepayment.PaymentStatus) AttemptStatus {
+	switch status {
+	case corepayment.PaymentStatusCaptured:
+		return AttemptStatusSucceeded
+	case corepayment.PaymentStatusFailed:
+		return AttemptStatusFailed
+	default:
+		return AttemptStatusPending
+	}
+}
+
+func attemptStatusFromPayment(status Status) AttemptStatus {
+	switch status {
+	case StatusCaptured, StatusAuthorized:
+		return AttemptStatusSucceeded
+	case StatusFailed, StatusVoided:
+		return AttemptStatusFailed
+	default:
+		return AttemptStatusPending
+	}
 }
 
 func metadataString(metadata map[string]any, key string) string {
-	value, _ := metadata[key].(string)
-	return strings.TrimSpace(value)
+	if metadata == nil {
+		return ""
+	}
+	value, ok := metadata[key]
+	if !ok || value == nil {
+		return ""
+	}
+	if text, ok := value.(string); ok {
+		return strings.TrimSpace(text)
+	}
+	return ""
 }
