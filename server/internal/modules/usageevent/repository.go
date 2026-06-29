@@ -32,16 +32,22 @@ func (r *Repository) Ingest(ctx context.Context, userID uuid.UUID, events []Crea
 
 	response := &IngestResponse{}
 	for _, event := range events {
+		if err := r.resolveEventCustomer(ctx, tx, userID, &event); err != nil {
+			return nil, err
+		}
 		if err := r.validateReferences(ctx, tx, userID, event); err != nil {
 			return nil, err
 		}
 
-		inserted, err := insertEvent(ctx, tx, userID, event)
+		eventID, inserted, err := insertEvent(ctx, tx, userID, event)
 		if err != nil {
 			return nil, err
 		}
 		if inserted {
 			response.Inserted++
+			if err := r.consumeMatchedMeters(ctx, tx, userID, *eventID, event); err != nil {
+				return nil, err
+			}
 		} else {
 			response.Duplicates++
 		}
@@ -163,6 +169,25 @@ LIMIT $%d OFFSET $%d`, where, orderBy, limitPlaceholder, offsetPlaceholder)
 	}, nil
 }
 
+func (r *Repository) resolveEventCustomer(ctx context.Context, tx pgx.Tx, userID uuid.UUID, event *CreateParams) error {
+	if event.CustomerID != nil || strings.TrimSpace(event.ExternalCustomerID) == "" {
+		return nil
+	}
+
+	const query = `SELECT id FROM customers WHERE user_id = $1 AND external_id = $2`
+	var customerID uuid.UUID
+	err := tx.QueryRow(ctx, query, userID, strings.TrimSpace(event.ExternalCustomerID)).Scan(&customerID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("resolve event customer: %w", err)
+	}
+
+	event.CustomerID = &customerID
+	return nil
+}
+
 func (r *Repository) validateReferences(ctx context.Context, tx pgx.Tx, userID uuid.UUID, event CreateParams) error {
 	if event.ParentID != nil {
 		exists, err := existsForUser(ctx, tx, "usage_events", userID, *event.ParentID)
@@ -187,7 +212,7 @@ func (r *Repository) validateReferences(ctx context.Context, tx pgx.Tx, userID u
 	return nil
 }
 
-func insertEvent(ctx context.Context, tx pgx.Tx, userID uuid.UUID, event CreateParams) (bool, error) {
+func insertEvent(ctx context.Context, tx pgx.Tx, userID uuid.UUID, event CreateParams) (*uuid.UUID, bool, error) {
 	const query = `
 INSERT INTO usage_events (
     user_id,
@@ -201,14 +226,16 @@ INSERT INTO usage_events (
     metadata
 )
 VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), NULLIF($8, ''), $9)
-ON CONFLICT (user_id, external_id) WHERE external_id IS NOT NULL DO NOTHING`
+ON CONFLICT (user_id, external_id) WHERE external_id IS NOT NULL DO NOTHING
+RETURNING id`
 
 	metadata, err := encodeJSON(defaultMetadata(event.Metadata))
 	if err != nil {
-		return false, err
+		return nil, false, err
 	}
 
-	result, err := tx.Exec(
+	var eventID uuid.UUID
+	err = tx.QueryRow(
 		ctx,
 		query,
 		userID,
@@ -220,12 +247,15 @@ ON CONFLICT (user_id, external_id) WHERE external_id IS NOT NULL DO NOTHING`
 		event.ExternalCustomerID,
 		event.ExternalID,
 		metadata,
-	)
+	).Scan(&eventID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, nil
+	}
 	if err != nil {
-		return false, fmt.Errorf("insert usage event: %w", err)
+		return nil, false, fmt.Errorf("insert usage event: %w", err)
 	}
 
-	return result.RowsAffected() > 0, nil
+	return &eventID, true, nil
 }
 
 func existsForUser(ctx context.Context, tx pgx.Tx, table string, userID, id uuid.UUID) (bool, error) {
