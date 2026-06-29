@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cuffeyvidzro/leamout/internal/modules/billing"
 	"github.com/cuffeyvidzro/leamout/internal/modules/checkout"
 	"github.com/cuffeyvidzro/leamout/internal/modules/customer"
 	"github.com/cuffeyvidzro/leamout/internal/modules/customermeter"
@@ -38,8 +39,9 @@ func TestRenewalDunningEndToEnd(t *testing.T) {
 	productService := product.NewService(product.NewRepository(pool))
 	customerService := customer.NewService(customer.NewRepository(pool))
 	subscriptionService := subscription.NewService(subscription.NewRepository(pool))
-	checkoutRepo := checkout.NewRepository(pool, customermeter.NewRepository(pool))
+	checkoutRepo := checkout.NewRepository(pool)
 	checkoutService := checkout.NewService(checkoutRepo, nil)
+	billingService := billing.NewService(pool, customermeter.NewRepository(pool))
 	dunningService := NewService(NewRepository(pool), checkoutService)
 
 	interval := price.IntervalMonth
@@ -155,7 +157,7 @@ func TestRenewalDunningEndToEnd(t *testing.T) {
 		t.Fatal("expected dunning token last_used_at to be set after opening recovery link")
 	}
 
-	if err := checkoutService.CompletePaidCheckout(ctx, checkoutSession.ID); err != nil {
+	if err := billingService.CompletePaidCheckout(ctx, checkoutSession.ID); err != nil {
 		t.Fatalf("complete paid dunning checkout: %v", err)
 	}
 
