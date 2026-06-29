@@ -225,7 +225,7 @@ func (r *Repository) RevokeAttemptTokens(ctx context.Context, userID, attemptID 
 }
 
 func (r *Repository) MarkAttemptSent(ctx context.Context, attemptID uuid.UUID) error {
-	const query = `UPDATE dunning_attempts SET status = 'sent', sent_at = COALESCE(sent_at, NOW()) WHERE id = $1`
+	const query = `UPDATE dunning_attempts SET status = 'sent', sent_at = COALESCE(sent_at, NOW()) WHERE id = $1 AND status IN ('pending', 'sent')`
 	_, err := r.db.Exec(ctx, query, attemptID)
 	return err
 }
@@ -237,7 +237,7 @@ func (r *Repository) MarkAttemptClicked(ctx context.Context, attemptID uuid.UUID
 }
 
 func (r *Repository) MarkAttemptPaid(ctx context.Context, attemptID uuid.UUID) error {
-	const query = `UPDATE dunning_attempts SET status = 'paid', sent_at = COALESCE(sent_at, NOW()), paid_at = COALESCE(paid_at, NOW()) WHERE id = $1`
+	const query = `UPDATE dunning_attempts SET status = 'paid', sent_at = COALESCE(sent_at, NOW()), paid_at = COALESCE(paid_at, NOW()) WHERE id = $1 AND status IN ('pending', 'sent', 'paid')`
 	_, err := r.db.Exec(ctx, query, attemptID)
 	return err
 }

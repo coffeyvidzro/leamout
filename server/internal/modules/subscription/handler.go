@@ -100,6 +100,10 @@ func respondSubscription(c *gin.Context, subscription *Subscription, err error) 
 		c.JSON(http.StatusNotFound, gin.H{"error": "subscription not found"})
 		return
 	}
+	if errors.Is(err, ErrInvalidSubscription) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch subscription"})
 		return

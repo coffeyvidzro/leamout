@@ -13,6 +13,7 @@ import (
 	"time"
 
 	corepayment "github.com/cuffeyvidzro/leamout/internal/payment"
+	checkoutsm "github.com/cuffeyvidzro/leamout/internal/platform/statemachine/checkout"
 	"github.com/cuffeyvidzro/leamout/pkg/markets"
 	"github.com/google/uuid"
 )
@@ -113,6 +114,16 @@ func (s *Service) getPublicSession(ctx context.Context, clientSecret string) (*S
 }
 
 func (s *Service) Update(ctx context.Context, userID, id uuid.UUID, req UpdateRequest) (*Session, error) {
+	if req.Status != nil {
+		session, err := s.repository.Get(ctx, userID, id)
+		if err != nil {
+			return nil, err
+		}
+		if !checkoutsm.CanTransition(checkoutsm.Status(session.Status), checkoutsm.Status(*req.Status)) {
+			return nil, fmt.Errorf("%w: cannot transition checkout from %s to %s", ErrInvalidCheckoutRequest, session.Status, *req.Status)
+		}
+	}
+
 	if req.ExpiresAt != nil && req.ExpiresAt.Before(time.Now().UTC()) {
 		return nil, fmt.Errorf("%w: expires_at must be in the future", ErrInvalidCheckoutRequest)
 	}

@@ -78,6 +78,24 @@ RETURNING id, user_id, checkout_id, customer_id, external_id, provider, provider
 	return item, nil
 }
 
+func (r *Repository) GetByProviderExternalID(ctx context.Context, provider, externalID string) (*Payment, error) {
+	const query = `
+SELECT id, user_id, checkout_id, customer_id, external_id, provider, provider_reference, status,
+	currency, amount, fee_amount, net_amount, metadata, created_at, updated_at
+FROM payments
+WHERE provider = $1 AND external_id = $2`
+
+	item, err := scanPayment(r.db.QueryRow(ctx, query, strings.ToLower(strings.TrimSpace(provider)), strings.TrimSpace(externalID)))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get payment by provider external id: %w", err)
+	}
+
+	return item, nil
+}
+
 func (r *Repository) UpdateFromProvider(ctx context.Context, params UpdateFromProviderParams) (*Payment, error) {
 	params.ExternalID = strings.TrimSpace(params.ExternalID)
 	params.Provider = strings.ToLower(strings.TrimSpace(params.Provider))
