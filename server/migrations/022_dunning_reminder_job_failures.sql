@@ -23,8 +23,8 @@ CREATE TABLE dunning_reminder_job_failures (
         REFERENCES customers(user_id, id)
         ON DELETE CASCADE,
     CONSTRAINT fk_dunning_reminder_job_failures_attempt
-        FOREIGN KEY (user_id, dunning_attempt_id)
-        REFERENCES dunning_attempts(user_id, id)
+        FOREIGN KEY (dunning_attempt_id)
+        REFERENCES dunning_attempts(id)
         ON DELETE SET NULL,
     CONSTRAINT chk_dunning_reminder_job_failures_failure_number CHECK (failure_number > 0),
     CONSTRAINT chk_dunning_reminder_job_failures_status CHECK (status IN ('retry_scheduled', 'retry_exhausted')),
