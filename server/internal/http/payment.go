@@ -59,7 +59,7 @@ func (s *Server) buildPaymentStack(
 	)
 
 	checkoutService := checkout.NewService(checkoutRepo, paymentService, paymentRouter)
-	billingService := billing.NewService(s.pgPool, customerMeterRepo)
+	billingService := billing.NewService(s.pgPool, checkoutRepo, customerMeterRepo)
 	billingService.SetSettlementServices(transactionService, walletService)
 	paymentService.SetCapturedPaymentSettler(billingService)
 

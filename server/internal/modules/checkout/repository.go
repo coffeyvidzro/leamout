@@ -148,6 +148,47 @@ func (r *Repository) Update(ctx context.Context, userID, id uuid.UUID, req Updat
 	return r.get(ctx, query, args...)
 }
 
+func (r *Repository) LockByIDTx(ctx context.Context, tx pgx.Tx, id uuid.UUID) (*Session, error) {
+	const query = `
+SELECT id, user_id, customer_id, subscription_id, mode, source, label, amount, currency,
+	client_secret_hash, success_url, return_url, status, expires_at, completed_at, canceled_at,
+	metadata, created_at, updated_at
+FROM checkout_sessions
+WHERE id = $1
+FOR UPDATE`
+
+	session, err := scanSession(tx.QueryRow(ctx, query, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("lock checkout session by id: %w", err)
+	}
+
+	return session, nil
+}
+
+func (r *Repository) CompleteTx(ctx context.Context, tx pgx.Tx, id uuid.UUID) (*Session, error) {
+	const query = `
+UPDATE checkout_sessions
+SET status = 'completed', completed_at = COALESCE(completed_at, NOW())
+WHERE id = $1
+  AND status = 'open'
+RETURNING id, user_id, customer_id, subscription_id, mode, source, label, amount, currency,
+	client_secret_hash, success_url, return_url, status, expires_at, completed_at, canceled_at,
+	metadata, created_at, updated_at`
+
+	session, err := scanSession(tx.QueryRow(ctx, query, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("complete checkout session: %w", err)
+	}
+
+	return session, nil
+}
+
 func (r *Repository) get(ctx context.Context, query string, args ...any) (*Session, error) {
 	session, err := scanSession(r.db.QueryRow(ctx, query, args...))
 	if errors.Is(err, pgx.ErrNoRows) {
