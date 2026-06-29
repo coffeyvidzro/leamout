@@ -7,6 +7,7 @@ import (
 
 	"github.com/cuffeyvidzro/leamout/internal/modules/credits"
 	"github.com/cuffeyvidzro/leamout/internal/sms"
+	dunningworkflow "github.com/cuffeyvidzro/leamout/internal/workflows/dunning"
 	"github.com/riverqueue/river"
 )
 
@@ -20,15 +21,15 @@ func (s failingReminderSMSSender) Send(context.Context, sms.Message) error {
 
 func TestSendReminderWorkerRecordsRetryVisibilityAndCancelsAfterThreshold(t *testing.T) {
 	fixture := createDunningTokenSafetyFixture(t)
-	worker := NewSendReminderWorker(fixture.Service, failingReminderSMSSender{err: errors.New("provider timeout")}, "https://lmt.test", nil)
-	job := &river.Job[SendReminderArgs]{Args: SendReminderArgs{
+	worker := dunningworkflow.NewSendReminderWorker(fixture.Service, failingReminderSMSSender{err: errors.New("provider timeout")}, "https://lmt.test", nil)
+	job := &river.Job[dunningworkflow.SendReminderArgs]{Args: dunningworkflow.SendReminderArgs{
 		UserID:           fixture.UserID,
 		SubscriptionID:   fixture.SubscriptionID,
 		CustomerID:       fixture.CustomerID,
 		CurrentPeriodEnd: fixture.Attempt.PeriodEnd,
 	}}
 
-	for run := 1; run <= maxReminderJobFailures; run++ {
+	for run := 1; run <= dunningworkflow.MaxReminderJobFailures; run++ {
 		if err := worker.Work(context.Background(), job); err == nil {
 			t.Fatalf("expected reminder worker failure on run %d", run)
 		}
@@ -38,13 +39,13 @@ func TestSendReminderWorkerRecordsRetryVisibilityAndCancelsAfterThreshold(t *tes
 	if err != nil {
 		t.Fatalf("list reminder job failures: %v", err)
 	}
-	if len(failures) != maxReminderJobFailures {
-		t.Fatalf("expected %d reminder job failures, got %d", maxReminderJobFailures, len(failures))
+	if len(failures) != dunningworkflow.MaxReminderJobFailures {
+		t.Fatalf("expected %d reminder job failures, got %d", dunningworkflow.MaxReminderJobFailures, len(failures))
 	}
 
 	latest := failures[0]
-	if latest.FailureNumber != maxReminderJobFailures {
-		t.Fatalf("expected latest failure number %d, got %d", maxReminderJobFailures, latest.FailureNumber)
+	if latest.FailureNumber != dunningworkflow.MaxReminderJobFailures {
+		t.Fatalf("expected latest failure number %d, got %d", dunningworkflow.MaxReminderJobFailures, latest.FailureNumber)
 	}
 	if latest.Status != ReminderJobFailureStatusRetryExhausted {
 		t.Fatalf("expected latest failure status %s, got %s", ReminderJobFailureStatusRetryExhausted, latest.Status)
@@ -52,8 +53,8 @@ func TestSendReminderWorkerRecordsRetryVisibilityAndCancelsAfterThreshold(t *tes
 	if !latest.Retryable {
 		t.Fatal("expected provider timeout failure to be retryable")
 	}
-	if latest.ErrorType != errorTypeSMSSend {
-		t.Fatalf("expected error type %s, got %s", errorTypeSMSSend, latest.ErrorType)
+	if latest.ErrorType != dunningworkflow.ErrorTypeSMSSend {
+		t.Fatalf("expected error type %s, got %s", dunningworkflow.ErrorTypeSMSSend, latest.ErrorType)
 	}
 	if latest.AttemptID == nil || *latest.AttemptID != fixture.Attempt.ID {
 		t.Fatalf("expected failure attempt id %s, got %v", fixture.Attempt.ID, latest.AttemptID)
@@ -81,8 +82,8 @@ func TestSendReminderWorkerRecordsRetryVisibilityAndCancelsAfterThreshold(t *tes
 
 func TestSendReminderWorkerRecordsNonRetryableFailureImmediately(t *testing.T) {
 	fixture := createDunningTokenSafetyFixture(t)
-	worker := NewSendReminderWorker(fixture.Service, failingReminderSMSSender{err: credits.ErrInsufficientBalance}, "https://lmt.test", nil)
-	job := &river.Job[SendReminderArgs]{Args: SendReminderArgs{
+	worker := dunningworkflow.NewSendReminderWorker(fixture.Service, failingReminderSMSSender{err: credits.ErrInsufficientBalance}, "https://lmt.test", nil)
+	job := &river.Job[dunningworkflow.SendReminderArgs]{Args: dunningworkflow.SendReminderArgs{
 		UserID:           fixture.UserID,
 		SubscriptionID:   fixture.SubscriptionID,
 		CustomerID:       fixture.CustomerID,
@@ -111,8 +112,8 @@ func TestSendReminderWorkerRecordsNonRetryableFailureImmediately(t *testing.T) {
 	if failure.Retryable {
 		t.Fatal("expected insufficient credits failure to be non-retryable")
 	}
-	if failure.ErrorType != errorTypeInsufficientFunds {
-		t.Fatalf("expected error type %s, got %s", errorTypeInsufficientFunds, failure.ErrorType)
+	if failure.ErrorType != dunningworkflow.ErrorTypeInsufficientFunds {
+		t.Fatalf("expected error type %s, got %s", dunningworkflow.ErrorTypeInsufficientFunds, failure.ErrorType)
 	}
 
 	attempt, err := fixture.Service.Get(context.Background(), fixture.UserID, fixture.Attempt.ID)
