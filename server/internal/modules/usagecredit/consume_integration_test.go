@@ -26,7 +26,7 @@ func TestConsumeUsageEventConcurrentSameIdempotencyKeyDebitsOnce(t *testing.T) {
 	eventID := createUsageCreditTestEvent(t, pool, fixture, "same-key")
 	idempotencyKey := fmt.Sprintf("usage_event:%s:meter:%s", eventID, fixture.MeterID)
 
-	consumeConcurrently(t, pool, 24, func(worker int) error {
+	consumeConcurrently(t, 24, func(worker int) error {
 		return consumeUsageCreditInTx(pool, fixture, eventID, 10, idempotencyKey)
 	})
 
@@ -45,11 +45,16 @@ func TestConsumeUsageEventConcurrentSameIdempotencyKeyDebitsOnce(t *testing.T) {
 func TestConsumeUsageEventConcurrentUniqueKeysSerializesGrantDebits(t *testing.T) {
 	pool := openUsageCreditTestDB(t)
 	fixture := createUsageCreditConcurrencyFixture(t, pool, 100)
+	workerCount := 10
+	eventIDs := make([]uuid.UUID, workerCount)
+	idempotencyKeys := make([]string, workerCount)
+	for worker := 0; worker < workerCount; worker++ {
+		eventIDs[worker] = createUsageCreditTestEvent(t, pool, fixture, fmt.Sprintf("unique-key-%d", worker))
+		idempotencyKeys[worker] = fmt.Sprintf("usage_event:%s:meter:%s", eventIDs[worker], fixture.MeterID)
+	}
 
-	consumeConcurrently(t, pool, 10, func(worker int) error {
-		eventID := createUsageCreditTestEvent(t, pool, fixture, fmt.Sprintf("unique-key-%d", worker))
-		idempotencyKey := fmt.Sprintf("usage_event:%s:meter:%s", eventID, fixture.MeterID)
-		return consumeUsageCreditInTx(pool, fixture, eventID, 7, idempotencyKey)
+	consumeConcurrently(t, workerCount, func(worker int) error {
+		return consumeUsageCreditInTx(pool, fixture, eventIDs[worker], 7, idempotencyKeys[worker])
 	})
 
 	remaining, ledgerQuantity, ledgerCount := readUsageCreditGrantStats(t, pool, fixture)
@@ -230,7 +235,7 @@ VALUES ($1, $2, 'api_call', 'user', $3, $4, '{}'::jsonb)`,
 	return eventID
 }
 
-func consumeConcurrently(t *testing.T, pool *pgxpool.Pool, workers int, consume func(worker int) error) {
+func consumeConcurrently(t *testing.T, workers int, consume func(worker int) error) {
 	t.Helper()
 
 	start := make(chan struct{})
