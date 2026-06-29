@@ -23,6 +23,13 @@ func (s *Service) ListAttemptTransitions(ctx context.Context, userID, attemptID 
 	return s.repository.ListAttemptTransitions(ctx, userID, attemptID)
 }
 
+func (s *Service) MarkAttemptCanceled(ctx context.Context, attemptID uuid.UUID, metadata map[string]any) error {
+	if err := s.validateAttemptTransition(ctx, attemptID, AttemptStatusCanceled); err != nil {
+		return err
+	}
+	return s.repository.MarkAttemptCanceled(ctx, attemptID, metadata)
+}
+
 func (r *Repository) ListAttemptTransitions(ctx context.Context, userID, attemptID uuid.UUID) ([]AttemptTransition, error) {
 	const query = `
 SELECT id, user_id, dunning_attempt_id, actor, reason, previous_status, next_status, metadata, created_at
@@ -50,6 +57,10 @@ ORDER BY created_at ASC, id ASC`
 	}
 
 	return transitions, nil
+}
+
+func (r *Repository) MarkAttemptCanceled(ctx context.Context, attemptID uuid.UUID, metadata map[string]any) error {
+	return r.markAttemptCanceled(ctx, attemptID, metadata)
 }
 
 func (r *Repository) markAttemptSent(ctx context.Context, attemptID uuid.UUID) error {
