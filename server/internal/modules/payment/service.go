@@ -40,10 +40,6 @@ type CapturedPaymentSettler interface {
 	SettleCapturedPayment(ctx context.Context, paymentRecord *Payment) error
 }
 
-type CapturedPaymentSettler interface {
-	SettleCapturedPayment(ctx context.Context, paymentRecord *Payment) error
-}
-
 type Service struct {
 	repository             *Repository
 	charger                Charger
@@ -63,10 +59,6 @@ func NewService(repository *Repository, charger Charger, transactions Transactio
 
 func (s *Service) SetCharger(charger Charger) {
 	s.charger = charger
-}
-
-func (s *Service) SetCapturedPaymentSettler(settler CapturedPaymentSettler) {
-	s.capturedPaymentSettler = settler
 }
 
 func (s *Service) SetCapturedPaymentSettler(settler CapturedPaymentSettler) {
@@ -400,13 +392,11 @@ func attemptResponse(result *corepayment.ChargeResult) map[string]any {
 		return map[string]any{}
 	}
 	return map[string]any{
-		"transaction_id":      result.TransactionID,
-		"provider":            result.Provider,
-		"provider_reference":  result.ProviderReference,
-		"status":              result.Status,
-		"message":             result.Message,
-		"customer_message":    result.CustomerMessage,
-		"provider_response_id": result.ProviderResponseID,
+		"transaction_id":     result.TransactionID,
+		"provider":           result.Provider,
+		"provider_reference": result.ProviderReference,
+		"status":             result.Status,
+		"message":            result.Message,
 	}
 }
 
@@ -421,16 +411,10 @@ func firstNonEmpty(values ...string) string {
 
 func statusFromCore(status corepayment.PaymentStatus) Status {
 	switch status {
-	case corepayment.PaymentStatusCaptured:
+	case corepayment.PaymentStatusSucceeded:
 		return StatusCaptured
 	case corepayment.PaymentStatusFailed:
 		return StatusFailed
-	case corepayment.PaymentStatusAuthorized:
-		return StatusAuthorized
-	case corepayment.PaymentStatusVoided:
-		return StatusVoided
-	case corepayment.PaymentStatusRefunded:
-		return StatusRefunded
 	default:
 		return StatusPending
 	}
@@ -438,7 +422,7 @@ func statusFromCore(status corepayment.PaymentStatus) Status {
 
 func attemptStatusFromCore(status corepayment.PaymentStatus) AttemptStatus {
 	switch status {
-	case corepayment.PaymentStatusCaptured:
+	case corepayment.PaymentStatusSucceeded:
 		return AttemptStatusSucceeded
 	case corepayment.PaymentStatusFailed:
 		return AttemptStatusFailed

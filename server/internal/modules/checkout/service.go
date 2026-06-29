@@ -261,13 +261,13 @@ func (s *Service) resolveRouteFees(ctx context.Context, session *Session, countr
 	return route.Fees, nil
 }
 
-func calculateCustomerCheckoutFees(baseAmount int64, fees corepayment.RoutingFees) FeeBreakdown {
+func calculateCustomerCheckoutFees(baseAmount int64, fees corepayment.RoutingFees) CheckoutFeeBreakdown {
 	mmoFee := basisPointsFee(baseAmount, fees.MMOFeeBps)
 	providerFee := basisPointsFee(baseAmount, fees.ProviderFeeBps)
 	processingFee := mmoFee + providerFee
 
-	return FeeBreakdown{
-		FeePayer:       "customer",
+	return CheckoutFeeBreakdown{
+		FeePayer:       FeePayerCustomer,
 		MMOFeeBps:      fees.MMOFeeBps,
 		ProviderFeeBps: fees.ProviderFeeBps,
 		TotalFeeBps:    fees.TotalFeeBps,
@@ -278,11 +278,11 @@ func calculateCustomerCheckoutFees(baseAmount int64, fees corepayment.RoutingFee
 	}
 }
 
-func basisPointsFee(amount int64, bps int) int64 {
+func basisPointsFee(amount int64, bps int64) int64 {
 	if amount <= 0 || bps <= 0 {
 		return 0
 	}
-	return (amount*int64(bps) + 9999) / 10000
+	return (amount*bps + 9999) / 10000
 }
 
 func newClientSecret() (string, error) {
