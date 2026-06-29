@@ -1,4 +1,4 @@
-package dunning
+package dunning_test
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/modules/checkout"
 	"github.com/cuffeyvidzro/leamout/internal/modules/customer"
 	"github.com/cuffeyvidzro/leamout/internal/modules/customermeter"
+	dunning "github.com/cuffeyvidzro/leamout/internal/modules/dunning"
 	"github.com/cuffeyvidzro/leamout/internal/modules/price"
 	"github.com/cuffeyvidzro/leamout/internal/modules/product"
 	"github.com/cuffeyvidzro/leamout/internal/modules/subscription"
@@ -44,23 +45,15 @@ func TestRenewalDunningEndToEnd(t *testing.T) {
 	subscriptionService := subscription.NewService(subscriptionRepo)
 	checkoutRepo := checkout.NewRepository(pool)
 	checkoutService := checkout.NewService(checkoutRepo, nil)
-	dunningRepo := NewRepository(pool)
+	dunningRepo := dunning.NewRepository(pool)
 	billingService := billing.NewService(pool, checkoutRepo, customermeter.NewRepository(pool))
 	billingService.SetCompletionServices(subscriptionRepo, dunningRepo, benefit.NewRepository(pool))
-	dunningService := NewService(dunningRepo, checkoutService)
+	dunningService := dunning.NewService(dunningRepo, checkoutService)
 
 	interval := price.IntervalMonth
 	createdProduct, err := productService.Create(ctx, userID, product.CreateRequest{
 		Name: "Creator Pro",
-		Prices: []price.CreateRequest{
-			{
-				Nickname:   "Monthly",
-				Type:       price.TypeRecurring,
-				UnitAmount: 5000,
-				Currency:   "GHS",
-				Interval:   &interval,
-			},
-		},
+		Prices: []price.CreateRequest{{Nickname: "Monthly", Type: price.TypeRecurring, UnitAmount: 5000, Currency: "GHS", Interval: &interval}},
 	})
 	if err != nil {
 		t.Fatalf("create product with recurring price: %v", err)
@@ -70,11 +63,7 @@ func TestRenewalDunningEndToEnd(t *testing.T) {
 	}
 
 	externalID := "customer_renewal_e2e_" + userID.String()
-	createdCustomer, err := customerService.Create(ctx, userID, customer.CreateRequest{
-		Name:       "Renewal E2E Customer",
-		Phone:      "+233241234567",
-		ExternalID: &externalID,
-	})
+	createdCustomer, err := customerService.Create(ctx, userID, customer.CreateRequest{Name: "Renewal E2E Customer", Phone: "+233241234567", ExternalID: &externalID})
 	if err != nil {
 		t.Fatalf("create customer: %v", err)
 	}
@@ -82,11 +71,7 @@ func TestRenewalDunningEndToEnd(t *testing.T) {
 	periodStart := time.Now().UTC().Add(-28 * 24 * time.Hour).Truncate(time.Microsecond)
 	periodEnd := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Microsecond)
 	createdSubscription, err := subscriptionService.Create(ctx, userID, subscription.CreateRequest{
-		CustomerID:         &createdCustomer.ID,
-		PriceID:            createdProduct.Prices[0].ID,
-		Status:             subscription.StatusActive,
-		CurrentPeriodStart: periodStart,
-		CurrentPeriodEnd:   periodEnd,
+		CustomerID: &createdCustomer.ID, PriceID: createdProduct.Prices[0].ID, Status: subscription.StatusActive, CurrentPeriodStart: periodStart, CurrentPeriodEnd: periodEnd,
 	})
 	if err != nil {
 		t.Fatalf("create subscription: %v", err)
@@ -103,12 +88,7 @@ func TestRenewalDunningEndToEnd(t *testing.T) {
 
 	sender := &recordingSMSSender{}
 	worker := dunningworkflow.NewSendReminderWorker(dunningService, sender, "https://lmt.test", nil)
-	if err := worker.Work(ctx, &river.Job[dunningworkflow.SendReminderArgs]{Args: dunningworkflow.SendReminderArgs{
-		UserID:           candidate.UserID,
-		SubscriptionID:   candidate.ID,
-		CustomerID:       *candidate.CustomerID,
-		CurrentPeriodEnd: candidate.CurrentPeriodEnd,
-	}}); err != nil {
+	if err := worker.Work(ctx, &river.Job[dunningworkflow.SendReminderArgs]{Args: dunningworkflow.SendReminderArgs{UserID: candidate.UserID, SubscriptionID: candidate.ID, CustomerID: *candidate.CustomerID, CurrentPeriodEnd: candidate.CurrentPeriodEnd}}); err != nil {
 		t.Fatalf("send dunning reminder: %v", err)
 	}
 	if len(sender.messages) != 1 {
@@ -129,7 +109,7 @@ func TestRenewalDunningEndToEnd(t *testing.T) {
 		t.Fatalf("expected one dunning attempt, got %d", len(attempts))
 	}
 	attempt := attempts[0]
-	if attempt.Status != AttemptStatusSent {
+	if attempt.Status != dunning.AttemptStatusSent {
 		t.Fatalf("expected dunning attempt sent, got %s", attempt.Status)
 	}
 	if attempt.SentAt == nil {
@@ -181,7 +161,7 @@ func TestRenewalDunningEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get paid dunning attempt: %v", err)
 	}
-	if paidAttempt.Status != AttemptStatusPaid {
+	if paidAttempt.Status != dunning.AttemptStatusPaid {
 		t.Fatalf("expected dunning attempt paid, got %s", paidAttempt.Status)
 	}
 	if paidAttempt.PaidAt == nil {
@@ -210,67 +190,51 @@ func TestRenewalDunningEndToEnd(t *testing.T) {
 
 func openRenewalDunningTestDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-
 	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
 	if databaseURL == "" {
 		t.Skip("set DATABASE_URL to run renewal dunning end-to-end integration test")
 	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
 		t.Fatalf("connect test database: %v", err)
 	}
 	t.Cleanup(pool.Close)
-
 	if err := pool.Ping(ctx); err != nil {
 		t.Fatalf("ping test database: %v", err)
 	}
-
 	return pool
 }
 
 func createRenewalDunningTestUser(t *testing.T, pool *pgxpool.Pool) uuid.UUID {
 	t.Helper()
-
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-
 	userID := uuid.New()
 	_, err := pool.Exec(ctx, `
 INSERT INTO users (id, name, email, email_verified, status)
-VALUES ($1, 'Renewal Dunning E2E User', $2, TRUE, 'active')`,
-		userID,
-		fmt.Sprintf("renewal-dunning-e2e-%s@example.com", userID),
-	)
+VALUES ($1, 'Renewal Dunning E2E User', $2, TRUE, 'active')`, userID, fmt.Sprintf("renewal-dunning-e2e-%s@example.com", userID))
 	if err != nil {
 		t.Fatalf("insert test user: %v", err)
 	}
-	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id = $1`, userID)
-	})
-
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id = $1`, userID) })
 	return userID
 }
 
 func findDunningCandidate(t *testing.T, candidates []subscription.DunningCandidate, subscriptionID uuid.UUID) subscription.DunningCandidate {
 	t.Helper()
-
 	for _, candidate := range candidates {
 		if candidate.ID == subscriptionID {
 			return candidate
 		}
 	}
-
 	t.Fatalf("subscription %s was not returned by dunning scan", subscriptionID)
 	return subscription.DunningCandidate{}
 }
 
 func extractReminderToken(t *testing.T, message string) string {
 	t.Helper()
-
 	idx := strings.LastIndex(message, "/r/")
 	if idx < 0 {
 		t.Fatalf("expected reminder message to contain recovery link, got %q", message)
@@ -286,6 +250,5 @@ func extractReminderToken(t *testing.T, message string) string {
 	if decoded == "" {
 		t.Fatal("expected non-empty reminder token")
 	}
-
 	return decoded
 }
