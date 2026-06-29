@@ -2,7 +2,6 @@ package billing
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -23,16 +22,32 @@ type CheckoutStateRepository interface {
 	CompleteTx(ctx context.Context, tx pgx.Tx, id uuid.UUID) (*checkout.Session, error)
 }
 
+type SubscriptionRenewer interface {
+	RenewPeriodTx(ctx context.Context, tx pgx.Tx, userID, subscriptionID uuid.UUID) error
+}
+
+type DunningSettlementRepository interface {
+	MarkAttemptPaidTx(ctx context.Context, tx pgx.Tx, userID, attemptID, subscriptionID, checkoutID uuid.UUID) error
+	RevokeTokenByIDTx(ctx context.Context, tx pgx.Tx, userID, tokenID, attemptID uuid.UUID) error
+}
+
+type BenefitGranter interface {
+	GrantSubscriptionBenefitsTx(ctx context.Context, tx pgx.Tx, userID, subscriptionID, checkoutID uuid.UUID, fallbackCustomerID *uuid.UUID) error
+}
+
 type UsageCreditApplier interface {
 	ApplySubscriptionCredits(ctx context.Context, tx pgx.Tx, userID, subscriptionID, checkoutID uuid.UUID, fallbackCustomerID *uuid.UUID) error
 }
 
 type Service struct {
-	db            *pgxpool.Pool
-	checkoutState CheckoutStateRepository
-	usageCredits  UsageCreditApplier
-	transactions  TransactionCreator
-	wallet        WalletCreditor
+	db                 *pgxpool.Pool
+	checkoutState      CheckoutStateRepository
+	subscriptionRenewal SubscriptionRenewer
+	dunningSettlement  DunningSettlementRepository
+	benefitGrants      BenefitGranter
+	usageCredits       UsageCreditApplier
+	transactions       TransactionCreator
+	wallet             WalletCreditor
 }
 
 func NewService(db *pgxpool.Pool, checkoutState CheckoutStateRepository, usageCredits ...UsageCreditApplier) *Service {
@@ -41,6 +56,12 @@ func NewService(db *pgxpool.Pool, checkoutState CheckoutStateRepository, usageCr
 		service.usageCredits = usageCredits[0]
 	}
 	return service
+}
+
+func (s *Service) SetCompletionServices(subscriptionRenewal SubscriptionRenewer, dunningSettlement DunningSettlementRepository, benefitGrants BenefitGranter) {
+	s.subscriptionRenewal = subscriptionRenewal
+	s.dunningSettlement = dunningSettlement
+	s.benefitGrants = benefitGrants
 }
 
 // CompletePaidCheckout owns the business flow that happens after a checkout has
@@ -101,6 +122,12 @@ func (s *Service) completeDunningRenewal(ctx context.Context, tx pgx.Tx, session
 	if !isDunningRenewal(session) {
 		return nil
 	}
+	if s.subscriptionRenewal == nil {
+		return errors.New("subscription renewal repository is not configured")
+	}
+	if s.dunningSettlement == nil {
+		return errors.New("dunning settlement repository is not configured")
+	}
 
 	attemptID, err := metadataUUID(session.Metadata, "dunning_attempt_id")
 	if err != nil {
@@ -111,71 +138,14 @@ func (s *Service) completeDunningRenewal(ctx context.Context, tx pgx.Tx, session
 		return err
 	}
 
-	const extendSubscription = `
-UPDATE subscriptions s
-SET current_period_start = s.current_period_end,
-	current_period_end = CASE p.interval
-		WHEN 'day' THEN s.current_period_end + INTERVAL '1 day'
-		WHEN 'week' THEN s.current_period_end + INTERVAL '1 week'
-		WHEN 'month' THEN s.current_period_end + INTERVAL '1 month'
-		WHEN 'year' THEN s.current_period_end + INTERVAL '1 year'
-		ELSE s.current_period_end
-	END
-FROM prices p
-WHERE s.user_id = $1
-  AND s.id = $2
-  AND p.user_id = s.user_id
-  AND p.id = s.price_id
-  AND p.type = 'recurring'
-  AND p.interval IS NOT NULL
-  AND s.status = 'active'
-  AND s.cancel_at_period_end = FALSE`
-
-	tag, err := tx.Exec(ctx, extendSubscription, session.UserID, *session.SubscriptionID)
-	if err != nil {
+	if err := s.subscriptionRenewal.RenewPeriodTx(ctx, tx, session.UserID, *session.SubscriptionID); err != nil {
 		return fmt.Errorf("renew subscription period from billing checkout completion: %w", err)
 	}
-	if tag.RowsAffected() != 1 {
-		return fmt.Errorf("%w: subscription renewal did not match one active subscription", ErrInvalidCheckoutCompletion)
-	}
-
-	if err := setDunningTransitionContext(ctx, tx, "billing", "renewal_paid", map[string]any{
-		"source":              "billing_checkout_completion",
-		"checkout_session_id": session.ID.String(),
-	}); err != nil {
-		return err
-	}
-
-	const markAttemptPaid = `
-UPDATE dunning_attempts
-SET status = 'paid', sent_at = COALESCE(sent_at, NOW()), paid_at = COALESCE(paid_at, NOW())
-WHERE user_id = $1
-  AND id = $2
-  AND subscription_id = $3
-  AND status IN ('pending', 'sent')`
-
-	tag, err = tx.Exec(ctx, markAttemptPaid, session.UserID, attemptID, *session.SubscriptionID)
-	if err != nil {
+	if err := s.dunningSettlement.MarkAttemptPaidTx(ctx, tx, session.UserID, attemptID, *session.SubscriptionID, session.ID); err != nil {
 		return fmt.Errorf("mark dunning attempt paid from billing checkout completion: %w", err)
 	}
-	if tag.RowsAffected() != 1 {
-		return fmt.Errorf("%w: dunning attempt paid transition did not match one attempt", ErrInvalidCheckoutCompletion)
-	}
-
-	const revokeToken = `
-UPDATE dunning_tokens
-SET revoked_at = COALESCE(revoked_at, NOW())
-WHERE user_id = $1
-  AND id = $2
-  AND dunning_attempt_id = $3
-  AND revoked_at IS NULL`
-
-	tag, err = tx.Exec(ctx, revokeToken, session.UserID, tokenID, attemptID)
-	if err != nil {
+	if err := s.dunningSettlement.RevokeTokenByIDTx(ctx, tx, session.UserID, tokenID, attemptID); err != nil {
 		return fmt.Errorf("revoke dunning token from billing checkout completion: %w", err)
-	}
-	if tag.RowsAffected() != 1 {
-		return fmt.Errorf("%w: dunning token revocation did not match one token", ErrInvalidCheckoutCompletion)
 	}
 
 	return nil
@@ -185,67 +155,11 @@ func (s *Service) fulfillSubscriptionBenefits(ctx context.Context, tx pgx.Tx, se
 	if session == nil || session.SubscriptionID == nil {
 		return nil
 	}
+	if s.benefitGrants == nil {
+		return errors.New("benefit grant repository is not configured")
+	}
 
-	const query = `
-INSERT INTO benefit_grants (
-	user_id,
-	benefit_id,
-	customer_id,
-	product_id,
-	subscription_id,
-	source_type,
-	source_id,
-	status,
-	starts_at,
-	ends_at,
-	properties,
-	metadata
-)
-SELECT
-	s.user_id,
-	b.id,
-	COALESCE(s.customer_id, $3),
-	p.product_id,
-	s.id,
-	'subscription',
-	s.id,
-	'active',
-	s.current_period_start,
-	s.current_period_end,
-	b.properties,
-	jsonb_build_object(
-		'source', 'billing_checkout_completion',
-		'checkout_session_id', $4::text,
-		'subscription_id', s.id::text,
-		'product_id', p.product_id::text
-	)
-FROM subscriptions s
-JOIN prices p
-  ON p.user_id = s.user_id
- AND p.id = s.price_id
-JOIN product_benefits pb
-  ON pb.user_id = s.user_id
- AND pb.product_id = p.product_id
-JOIN benefits b
-  ON b.user_id = pb.user_id
- AND b.id = pb.benefit_id
- AND b.archived_at IS NULL
-WHERE s.user_id = $1
-  AND s.id = $2
-  AND COALESCE(s.customer_id, $3) IS NOT NULL
-ON CONFLICT (user_id, customer_id, benefit_id, source_type, source_id)
-DO UPDATE SET
-	product_id = EXCLUDED.product_id,
-	subscription_id = EXCLUDED.subscription_id,
-	status = 'active',
-	starts_at = EXCLUDED.starts_at,
-	ends_at = EXCLUDED.ends_at,
-	properties = EXCLUDED.properties,
-	metadata = benefit_grants.metadata || EXCLUDED.metadata,
-	revoked_at = NULL,
-	updated_at = NOW()`
-
-	if _, err := tx.Exec(ctx, query, session.UserID, *session.SubscriptionID, session.CustomerID, session.ID); err != nil {
+	if err := s.benefitGrants.GrantSubscriptionBenefitsTx(ctx, tx, session.UserID, *session.SubscriptionID, session.ID, session.CustomerID); err != nil {
 		return fmt.Errorf("fulfill subscription benefits from billing checkout completion: %w", err)
 	}
 
@@ -256,31 +170,6 @@ DO UPDATE SET
 	}
 
 	return nil
-}
-
-func setDunningTransitionContext(ctx context.Context, tx pgx.Tx, actor, reason string, metadata map[string]any) error {
-	metadataBytes, err := json.Marshal(defaultMetadata(metadata))
-	if err != nil {
-		return fmt.Errorf("encode dunning transition metadata: %w", err)
-	}
-
-	const query = `
-SELECT
-	set_config('leamout.dunning_transition_actor', $1, true),
-	set_config('leamout.dunning_transition_reason', $2, true),
-	set_config('leamout.dunning_transition_metadata', $3, true)`
-
-	if _, err := tx.Exec(ctx, query, actor, reason, string(metadataBytes)); err != nil {
-		return fmt.Errorf("set billing dunning transition context: %w", err)
-	}
-	return nil
-}
-
-func defaultMetadata(metadata map[string]any) map[string]any {
-	if metadata == nil {
-		return map[string]any{}
-	}
-	return metadata
 }
 
 func checkoutStateError(action string, err error) error {
