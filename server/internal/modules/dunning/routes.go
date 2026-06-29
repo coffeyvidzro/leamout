@@ -11,5 +11,6 @@ func RegisterRoutes(router gin.IRouter, handler *Handler, authMiddleware gin.Han
 	dunning.Use(authMiddleware)
 
 	dunning.GET("", handler.List)
+	dunning.GET("/metrics", handler.Metrics)
 	dunning.GET("/:id", handler.Get)
 }
