@@ -11,6 +11,7 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/modules/transaction"
 	"github.com/cuffeyvidzro/leamout/internal/modules/wallet"
 	corepayment "github.com/cuffeyvidzro/leamout/internal/payment"
+	paymentsm "github.com/cuffeyvidzro/leamout/internal/platform/statemachine/payment"
 	"github.com/google/uuid"
 )
 
@@ -178,6 +179,14 @@ func (s *Service) ApplyProviderResult(ctx context.Context, params UpdateFromProv
 	params.Provider = strings.ToLower(strings.TrimSpace(params.Provider))
 	if params.ExternalID == "" || params.Provider == "" || params.Status == "" {
 		return nil, ErrInvalidPayment
+	}
+
+	currentPayment, err := s.repository.GetByProviderExternalID(ctx, params.Provider, params.ExternalID)
+	if err != nil {
+		return nil, err
+	}
+	if !paymentsm.CanTransition(paymentsm.Status(currentPayment.Status), paymentsm.Status(params.Status)) {
+		return nil, fmt.Errorf("%w: cannot transition payment from %s to %s", ErrInvalidPayment, currentPayment.Status, params.Status)
 	}
 
 	paymentRecord, err := s.repository.UpdateFromProvider(ctx, params)

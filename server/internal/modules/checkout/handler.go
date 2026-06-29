@@ -128,6 +128,10 @@ func respondCheckout(c *gin.Context, session *Session, err error) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "checkout session not found"})
 		return
 	}
+	if errors.Is(err, ErrInvalidCheckoutRequest) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": checkoutErrorMessage(err)})
+		return
+	}
 	if err != nil {
 		slog.ErrorContext(c.Request.Context(), "failed to fetch checkout session", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch checkout session"})
