@@ -64,14 +64,24 @@ Goal: make Leamout usable by external developers through clean APIs, docs, keys,
 - [ ] Add team members, roles, and permissions.
 - [ ] Add audit logs for sensitive actions and money-affecting changes.
 
-### API keys and authentication
+### Organization access tokens and authentication
 
-- [ ] Add API keys with clear prefixes, such as `lm_test_` and `lm_live_`.
-- [ ] Add scoped API key permissions.
-- [ ] Add API key rotation and revocation.
-- [ ] Track last-used timestamp, IP, user agent, and endpoint for API keys.
-- [ ] Add per-key rate limits.
-- [ ] Keep personal access tokens for internal/local workflows or migrate them to the API key model.
+- [ ] Introduce organization access tokens with clear prefixes, such as `lmt_org_test_` and `lmt_org_live_`.
+- [ ] Scope organization access tokens to organization, project, environment, and allowed capabilities.
+- [ ] Support token roles for read-only analytics, billing operations, usage ingestion, checkout creation, webhook management, and administrative actions.
+- [ ] Add token rotation, revocation, expiration, and emergency disable workflows.
+- [ ] Track last-used timestamp, IP, geolocation context, user agent, endpoint, and request ID for every organization access token.
+- [ ] Add per-token and per-organization rate limits.
+- [ ] Keep personal access tokens for local/internal workflows or migrate them to organization-scoped tokens with explicit ownership.
+
+### Geolocation and market intelligence
+
+- [ ] Document how MaxMind and IPinfo are used to enrich request context with country, region, city, timezone, and confidence signals.
+- [ ] Define fallback behavior when the local MaxMind database is missing, stale, or cannot resolve an IP address.
+- [ ] Define fallback behavior when IPinfo is unavailable, rate limited, or returns incomplete data.
+- [ ] Use geolocation context to improve checkout defaults, country selection, currency selection, network hints, fraud checks, and routing diagnostics.
+- [ ] Add privacy and retention rules for IP-derived geolocation data.
+- [ ] Add tests for MaxMind/IPinfo provider selection, failure behavior, and request-context propagation.
 
 ### Developer experience
 
@@ -216,16 +226,17 @@ Goal: help developers and creators launch richer paid products without rebuildin
 
 ### Observability
 
-- [ ] Add structured logs with request ID, organization ID, project ID, payment ID, checkout ID, invoice ID, and provider reference where available.
+- [ ] Add structured logs with request ID, organization ID, project ID, payment ID, checkout ID, invoice ID, provider reference, and geolocation provider where available.
 - [ ] Add metrics for payment success rate by provider, network, country, amount band, and currency.
 - [ ] Add metrics for webhook latency and failure rate.
 - [ ] Add metrics for queue lag, job retries, and dead-letter count.
 - [ ] Add metrics for usage ingestion throughput and duplicate rate.
-- [ ] Add traces across checkout, payment, webhook, ledger, and reconciliation flows.
+- [ ] Add traces across checkout, payment, webhook, ledger, geolocation enrichment, and reconciliation flows.
 - [ ] Add dashboards and alerts for money-affecting incidents.
 
 ### Security
 
+- [ ] Add explicit rules for when IP-derived geolocation can influence risk scoring, provider routing, and checkout UX without blocking legitimate customers.
 - [ ] Add webhook signature verification documentation and examples.
 - [ ] Add secret rotation procedures.
 - [ ] Add sensitive-data redaction in logs.
