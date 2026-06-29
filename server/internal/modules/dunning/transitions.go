@@ -14,8 +14,9 @@ import (
 const (
 	dunningTransitionActorWorker = "worker"
 
-	dunningTransitionReasonReminderSent = "reminder_sent"
-	dunningTransitionReasonRenewalPaid  = "renewal_paid"
+	dunningTransitionReasonReminderSent      = "reminder_sent"
+	dunningTransitionReasonRenewalPaid       = "renewal_paid"
+	dunningTransitionReasonReminderJobFailed = "reminder_job_failed"
 )
 
 func (s *Service) ListAttemptTransitions(ctx context.Context, userID, attemptID uuid.UUID) ([]AttemptTransition, error) {
@@ -61,6 +62,10 @@ func (r *Repository) markAttemptPaid(ctx context.Context, attemptID uuid.UUID) e
 	return r.transitionAttemptStatus(ctx, attemptID, AttemptStatusPaid, []AttemptStatus{AttemptStatusPending, AttemptStatusSent}, "system", dunningTransitionReasonRenewalPaid, map[string]any{
 		"source": "dunning_service",
 	})
+}
+
+func (r *Repository) markAttemptCanceled(ctx context.Context, attemptID uuid.UUID, metadata map[string]any) error {
+	return r.transitionAttemptStatus(ctx, attemptID, AttemptStatusCanceled, []AttemptStatus{AttemptStatusPending, AttemptStatusSent}, dunningTransitionActorWorker, dunningTransitionReasonReminderJobFailed, metadata)
 }
 
 func (r *Repository) transitionAttemptStatus(ctx context.Context, attemptID uuid.UUID, next AttemptStatus, allowedPrevious []AttemptStatus, actor, reason string, metadata map[string]any) error {
