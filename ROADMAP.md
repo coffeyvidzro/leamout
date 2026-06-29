@@ -16,14 +16,29 @@ Leamout should become a mobile-money-native billing platform that helps African 
 Core promises:
 
 - Mobile-money-first collections across African markets.
-- Precision metering and usage-based billing.
+- Access checks and prepaid usage credits for MVP monetization.
+- Precision metering and usage-based billing over time.
 - Accounting-grade money movement and reconciliation.
 - Developer-grade APIs, SDKs, webhooks, and sandbox tooling.
 - Merchant dashboards for subscriptions, revenue, dunning, usage, wallets, and settlements.
 
 ## Phase 0 — MVP hardening
 
-Goal: make the existing creator renewal flow dependable enough for private beta usage.
+Goal: make the existing creator renewal, access, and prepaid usage-credit flows dependable enough for private beta usage.
+
+### Access and prepaid usage credits
+
+- [x] Add Access Check API at `POST /v1/access/check`.
+- [x] Keep `POST /v1/entitlements/check` as a backward-compatible alias.
+- [x] Document the Access + Usage Credits developer model.
+- [x] Grant prepaid meter credits from active subscription benefit grants after paid checkout.
+- [x] Write usage credit grant ledger entries when prepaid credits are granted.
+- [x] Deduct prepaid usage credits from matched usage events.
+- [x] Refresh customer meter balances after usage credit grants and deductions.
+- [ ] Fix usage credit consumption idempotency prefix matching.
+- [ ] Add tests for Access Check on feature benefits, custom benefits, and meter-credit benefits.
+- [ ] Add tests for duplicate usage events so they do not deduct credits twice.
+- [ ] Add concurrency tests for usage credit consumption.
 
 ### Renewal and dunning reliability
 
@@ -33,8 +48,11 @@ Goal: make the existing creator renewal flow dependable enough for private beta 
 - [ ] Add dunning attempt transition history with actor, reason, previous status, next status, and metadata.
 - [ ] Add dead-letter handling and retry visibility for failed renewal reminder jobs.
 
-### Checkout and payment safety
+### Checkout, payment, and subscription safety
 
+- [ ] Enforce payment status transitions against late, duplicate, and out-of-order webhooks.
+- [ ] Enforce checkout status transitions through dedicated repository methods.
+- [ ] Enforce subscription status transitions through dedicated repository methods.
 - [ ] Add exact idempotency handling for checkout payment attempts.
 - [ ] Store raw provider webhook payloads before processing.
 - [ ] Deduplicate provider webhooks by provider event ID or provider transaction reference.
@@ -92,9 +110,9 @@ Goal: make Leamout usable by external developers through clean APIs, docs, keys,
 - [ ] Add API examples for common flows: subscription checkout, usage event ingestion, prepaid credits, renewal recovery, and webhook handling.
 - [ ] Add a CLI for local API testing and sandbox event simulation.
 
-## Phase 2 — Precision metering and usage billing
+## Phase 2 — Precision metering and prepaid usage credits
 
-Goal: support modern SaaS, AI, API, creator, community, and digital-service monetization models.
+Goal: make prepaid usage-credit monetization reliable before expanding into full usage billing.
 
 ### Usage ingestion
 
@@ -115,11 +133,24 @@ Goal: support modern SaaS, AI, API, creator, community, and digital-service mone
 - [ ] Add customer usage summaries suitable for customer portals and dashboards.
 - [ ] Add tests for count, sum, max, min, average, and unique aggregations.
 
+### Usage credits
+
+- [x] Support prepaid meter-credit benefits.
+- [x] Create usage credit grants from paid subscription checkouts.
+- [x] Track usage credit grants and usage credit ledger entries.
+- [x] Deduct credits from active grants using usage events.
+- [x] Update customer meter balances from usage credit grants.
+- [ ] Add credit expiry jobs.
+- [ ] Add credit adjustment APIs.
+- [ ] Add credit refund behavior.
+- [ ] Add rollover rules.
+- [ ] Add balance threshold webhooks.
+
 ### Rating and pricing
 
 - [ ] Add a rating engine that converts metered usage into billable line items.
 - [ ] Support flat-rate, per-unit, package, tiered, volume, graduated, and overage pricing.
-- [ ] Support prepaid credits, postpaid invoices, and hybrid prepaid/postpaid plans.
+- [ ] Support postpaid invoices and hybrid prepaid/postpaid plans.
 - [ ] Support custom billing intervals and billing-cycle anchors.
 - [ ] Support trials, grace periods, and plan changes.
 - [ ] Support proration for upgrades, downgrades, and mid-cycle changes.
@@ -204,14 +235,15 @@ Goal: help developers and creators launch richer paid products without rebuildin
 - [ ] Build secure short-domain routing for checkout and dunning links.
 - [ ] Add embeddable payment links and buttons.
 
-### Subscription and entitlement features
+### Subscription and access features
 
-- [ ] Add subscription items for multiple prices per subscription.
-- [ ] Add add-ons and seat-based billing.
-- [ ] Add entitlement checks API.
+- [x] Add Access Check API.
+- [x] Keep the legacy Entitlements Check API as a compatibility alias.
 - [ ] Add license keys and activation tracking.
 - [ ] Add plan limits and feature gates.
 - [ ] Add quota reset jobs by billing period.
+- [ ] Add subscription items for multiple prices per subscription.
+- [ ] Add add-ons and seat-based billing.
 
 ### Growth and revenue features
 
@@ -255,10 +287,11 @@ Goal: help developers and creators launch richer paid products without rebuildin
 
 ### Documentation
 
+- [x] Add Access + Usage Credits developer guide.
 - [ ] Add architecture decision records for billing, ledger, provider routing, idempotency, and reconciliation.
 - [ ] Add API guides for subscriptions, usage billing, prepaid credits, checkout, webhooks, and reconciliation.
 - [ ] Add runbooks for payment incidents, provider outages, stuck pending payments, failed billing jobs, and ledger correction.
-- [ ] Add glossary definitions for money, balance, credit, invoice, payment, transaction, settlement, reconciliation, usage event, meter, entitlement, and subscription.
+- [ ] Add glossary definitions for money, balance, credit, invoice, payment, transaction, settlement, reconciliation, usage event, meter, access, entitlement, and subscription.
 
 ## Definition of done for financial roadmap items
 
