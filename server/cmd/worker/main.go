@@ -19,6 +19,7 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/sms/provider/arkesel"
 	smsmock "github.com/cuffeyvidzro/leamout/internal/sms/provider/mock"
 	"github.com/cuffeyvidzro/leamout/internal/sms/routing"
+	dunningworkflow "github.com/cuffeyvidzro/leamout/internal/workflows/dunning"
 )
 
 func main() {
@@ -56,7 +57,7 @@ func main() {
 		},
 		sms.Config{},
 	)
-	dunning.RegisterSendReminderWorker(
+	dunningworkflow.RegisterSendReminderWorker(
 		workers,
 		dunningService,
 		smsService,

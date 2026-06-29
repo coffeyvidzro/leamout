@@ -28,12 +28,7 @@ type ScannerResult struct {
 }
 
 func NewScanner(subscriptions *subscription.Service, enqueue EnqueueReminderFunc, log *slog.Logger) *Scanner {
-	return &Scanner{
-		subscriptions: subscriptions,
-		enqueue:       enqueue,
-		window:        DefaultScanWindow,
-		log:           log,
-	}
+	return &Scanner{subscriptions: subscriptions, enqueue: enqueue, window: DefaultScanWindow, log: log}
 }
 
 func (s *Scanner) RunOnce(ctx context.Context) (*ScannerResult, error) {
@@ -50,37 +45,21 @@ func (s *Scanner) RunOnce(ctx context.Context) (*ScannerResult, error) {
 		return nil, fmt.Errorf("list subscriptions due for dunning: %w", err)
 	}
 
-	result := &ScannerResult{
-		WindowEnd: windowEnd,
-		Scanned:   len(candidates),
-	}
+	result := &ScannerResult{WindowEnd: windowEnd, Scanned: len(candidates)}
 	for _, candidate := range candidates {
 		if candidate.CustomerID == nil {
 			result.Skipped++
 			continue
 		}
 
-		err := s.enqueue(ctx, SendReminderArgs{
-			UserID:           candidate.UserID,
-			SubscriptionID:   candidate.ID,
-			CustomerID:       *candidate.CustomerID,
-			CurrentPeriodEnd: candidate.CurrentPeriodEnd,
-		})
-		if err != nil {
+		if err := s.enqueue(ctx, SendReminderArgs{UserID: candidate.UserID, SubscriptionID: candidate.ID, CustomerID: *candidate.CustomerID, CurrentPeriodEnd: candidate.CurrentPeriodEnd}); err != nil {
 			return nil, fmt.Errorf("enqueue dunning reminder for subscription %s: %w", candidate.ID, err)
 		}
-
 		result.Enqueued++
 	}
 
 	if s.log != nil {
-		s.log.Info(
-			"dunning scanner completed",
-			slog.String("window_end", result.WindowEnd.Format(time.RFC3339)),
-			slog.Int("scanned", result.Scanned),
-			slog.Int("enqueued", result.Enqueued),
-			slog.Int("skipped", result.Skipped),
-		)
+		s.log.Info("dunning scanner completed", slog.String("window_end", result.WindowEnd.Format(time.RFC3339)), slog.Int("scanned", result.Scanned), slog.Int("enqueued", result.Enqueued), slog.Int("skipped", result.Skipped))
 	}
 
 	return result, nil
@@ -90,6 +69,5 @@ func (s *Scanner) SetWindow(window time.Duration) {
 	if window <= 0 {
 		return
 	}
-
 	s.window = window
 }

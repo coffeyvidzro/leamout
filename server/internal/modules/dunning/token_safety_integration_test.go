@@ -1,4 +1,4 @@
-package dunning
+package dunning_test
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 
 	"github.com/cuffeyvidzro/leamout/internal/modules/checkout"
 	"github.com/cuffeyvidzro/leamout/internal/modules/customer"
+	dunning "github.com/cuffeyvidzro/leamout/internal/modules/dunning"
 	"github.com/cuffeyvidzro/leamout/internal/modules/price"
 	"github.com/cuffeyvidzro/leamout/internal/modules/product"
 	"github.com/cuffeyvidzro/leamout/internal/modules/subscription"
@@ -19,8 +20,8 @@ type dunningTokenSafetyFixture struct {
 	UserID         uuid.UUID
 	CustomerID     uuid.UUID
 	SubscriptionID uuid.UUID
-	Attempt        *Attempt
-	Service        *Service
+	Attempt        *dunning.Attempt
+	Service        *dunning.Service
 	Pool           *pgxpool.Pool
 }
 
@@ -33,7 +34,7 @@ func TestOpenRecoveryLinkRejectsExpiredToken(t *testing.T) {
 	expireDunningToken(t, fixture.Pool, fixture.UserID, token.ID)
 
 	_, err = fixture.Service.OpenRecoveryLink(context.Background(), rawToken)
-	if !errors.Is(err, ErrNotFound) {
+	if !errors.Is(err, dunning.ErrNotFound) {
 		t.Fatalf("expected expired dunning token to return ErrNotFound, got %v", err)
 	}
 	assertNoCheckoutCreatedForAttempt(t, fixture.Pool, fixture.Attempt.ID)
@@ -53,13 +54,12 @@ func TestOpenRecoveryLinkRejectsRevokedToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create dunning token: %v", err)
 	}
-
 	if err := fixture.Service.RevokeToken(context.Background(), rawToken); err != nil {
 		t.Fatalf("revoke dunning token: %v", err)
 	}
 
 	_, err = fixture.Service.OpenRecoveryLink(context.Background(), rawToken)
-	if !errors.Is(err, ErrNotFound) {
+	if !errors.Is(err, dunning.ErrNotFound) {
 		t.Fatalf("expected revoked dunning token to return ErrNotFound, got %v", err)
 	}
 	assertNoCheckoutCreatedForAttempt(t, fixture.Pool, fixture.Attempt.ID)
@@ -86,7 +86,7 @@ func TestCreateTokenRejectsDuplicateActiveTokenForAttempt(t *testing.T) {
 	}
 
 	_, _, err := fixture.Service.CreateToken(context.Background(), fixture.Attempt)
-	if !errors.Is(err, ErrActiveTokenExists) {
+	if !errors.Is(err, dunning.ErrActiveTokenExists) {
 		t.Fatalf("expected duplicate active dunning token to return ErrActiveTokenExists, got %v", err)
 	}
 	assertNoCheckoutCreatedForAttempt(t, fixture.Pool, fixture.Attempt.ID)
@@ -94,9 +94,8 @@ func TestCreateTokenRejectsDuplicateActiveTokenForAttempt(t *testing.T) {
 
 func TestOpenRecoveryLinkRejectsMalformedToken(t *testing.T) {
 	fixture := createDunningTokenSafetyFixture(t)
-
 	_, err := fixture.Service.OpenRecoveryLink(context.Background(), "not-a-real-dunning-token")
-	if !errors.Is(err, ErrNotFound) {
+	if !errors.Is(err, dunning.ErrNotFound) {
 		t.Fatalf("expected malformed dunning token to return ErrNotFound, got %v", err)
 	}
 	assertNoCheckoutCreatedForAttempt(t, fixture.Pool, fixture.Attempt.ID)
@@ -114,20 +113,12 @@ func createDunningTokenSafetyFixture(t *testing.T) dunningTokenSafetyFixture {
 	subscriptionService := subscription.NewService(subscription.NewRepository(pool))
 	checkoutRepo := checkout.NewRepository(pool)
 	checkoutService := checkout.NewService(checkoutRepo, nil)
-	dunningService := NewService(NewRepository(pool), checkoutService)
+	dunningService := dunning.NewService(dunning.NewRepository(pool), checkoutService)
 
 	interval := price.IntervalMonth
 	createdProduct, err := productService.Create(ctx, userID, product.CreateRequest{
-		Name: "Token Safety Plan",
-		Prices: []price.CreateRequest{
-			{
-				Nickname:   "Monthly",
-				Type:       price.TypeRecurring,
-				UnitAmount: 5000,
-				Currency:   "GHS",
-				Interval:   &interval,
-			},
-		},
+		Name:   "Token Safety Plan",
+		Prices: []price.CreateRequest{{Nickname: "Monthly", Type: price.TypeRecurring, UnitAmount: 5000, Currency: "GHS", Interval: &interval}},
 	})
 	if err != nil {
 		t.Fatalf("create product with recurring price: %v", err)
@@ -137,58 +128,33 @@ func createDunningTokenSafetyFixture(t *testing.T) dunningTokenSafetyFixture {
 	}
 
 	externalID := "customer_token_safety_" + userID.String()
-	createdCustomer, err := customerService.Create(ctx, userID, customer.CreateRequest{
-		Name:       "Token Safety Customer",
-		Phone:      "+233241234567",
-		ExternalID: &externalID,
-	})
+	createdCustomer, err := customerService.Create(ctx, userID, customer.CreateRequest{Name: "Token Safety Customer", Phone: "+233241234567", ExternalID: &externalID})
 	if err != nil {
 		t.Fatalf("create customer: %v", err)
 	}
 
 	periodEnd := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Microsecond)
 	createdSubscription, err := subscriptionService.Create(ctx, userID, subscription.CreateRequest{
-		CustomerID:         &createdCustomer.ID,
-		PriceID:            createdProduct.Prices[0].ID,
-		Status:             subscription.StatusActive,
-		CurrentPeriodStart: time.Now().UTC().Add(-28 * 24 * time.Hour).Truncate(time.Microsecond),
-		CurrentPeriodEnd:   periodEnd,
+		CustomerID: &createdCustomer.ID, PriceID: createdProduct.Prices[0].ID, Status: subscription.StatusActive, CurrentPeriodStart: time.Now().UTC().Add(-28 * 24 * time.Hour).Truncate(time.Microsecond), CurrentPeriodEnd: periodEnd,
 	})
 	if err != nil {
 		t.Fatalf("create subscription: %v", err)
 	}
 
-	attempt, err := dunningService.CreateOrReuseAttempt(ctx, CreateAttemptParams{
-		UserID:         userID,
-		SubscriptionID: createdSubscription.ID,
-		CustomerID:     &createdCustomer.ID,
-		Reason:         AttemptReasonRenewalDue,
-		PeriodEnd:      periodEnd,
-		ExpiresAt:      time.Now().UTC().Add(24 * time.Hour),
-		Metadata: map[string]any{
-			"source": "token_safety_test",
-		},
+	attempt, err := dunningService.CreateOrReuseAttempt(ctx, dunning.CreateAttemptParams{
+		UserID: userID, SubscriptionID: createdSubscription.ID, CustomerID: &createdCustomer.ID, Reason: dunning.AttemptReasonRenewalDue, PeriodEnd: periodEnd, ExpiresAt: time.Now().UTC().Add(24 * time.Hour), Metadata: map[string]any{"source": "token_safety_test"},
 	})
 	if err != nil {
 		t.Fatalf("create dunning attempt: %v", err)
 	}
 
-	return dunningTokenSafetyFixture{
-		UserID:         userID,
-		CustomerID:     createdCustomer.ID,
-		SubscriptionID: createdSubscription.ID,
-		Attempt:        attempt,
-		Service:        dunningService,
-		Pool:           pool,
-	}
+	return dunningTokenSafetyFixture{UserID: userID, CustomerID: createdCustomer.ID, SubscriptionID: createdSubscription.ID, Attempt: attempt, Service: dunningService, Pool: pool}
 }
 
 func expireDunningToken(t *testing.T, pool *pgxpool.Pool, userID, tokenID uuid.UUID) {
 	t.Helper()
-
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-
 	_, err := pool.Exec(ctx, `
 UPDATE dunning_tokens
 SET created_at = NOW() - INTERVAL '2 hours',
@@ -202,10 +168,8 @@ WHERE user_id = $1 AND id = $2`, userID, tokenID)
 
 func assertNoCheckoutCreatedForAttempt(t *testing.T, pool *pgxpool.Pool, attemptID uuid.UUID) {
 	t.Helper()
-
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-
 	var count int
 	if err := pool.QueryRow(ctx, `
 SELECT COUNT(*)

@@ -8,12 +8,12 @@ import (
 	"syscall"
 
 	"github.com/cuffeyvidzro/leamout/internal/config"
-	"github.com/cuffeyvidzro/leamout/internal/modules/dunning"
 	"github.com/cuffeyvidzro/leamout/internal/modules/subscription"
 	platformcron "github.com/cuffeyvidzro/leamout/internal/platform/cron"
 	"github.com/cuffeyvidzro/leamout/internal/platform/database"
 	"github.com/cuffeyvidzro/leamout/internal/platform/logger"
 	"github.com/cuffeyvidzro/leamout/internal/platform/queue"
+	dunningworkflow "github.com/cuffeyvidzro/leamout/internal/workflows/dunning"
 )
 
 func main() {
@@ -40,7 +40,7 @@ func main() {
 	defer postgresPool.Close()
 
 	workers := queue.NewWorkerRegistry()
-	dunning.RegisterReminderJobKind(workers)
+	dunningworkflow.RegisterReminderJobKind(workers)
 
 	riverClient, err := queue.NewClient(postgresPool, workers, queue.Config{Enabled: false})
 	if err != nil {
@@ -70,7 +70,7 @@ func main() {
 	}
 
 	subscriptionService := subscription.NewService(subscription.NewRepository(postgresPool))
-	scanner := dunning.NewScanner(subscriptionService, func(ctx context.Context, args dunning.SendReminderArgs) error {
+	scanner := dunningworkflow.NewScanner(subscriptionService, func(ctx context.Context, args dunningworkflow.SendReminderArgs) error {
 		return riverClient.Insert(ctx, args, nil)
 	}, log)
 
