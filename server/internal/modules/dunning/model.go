@@ -51,6 +51,15 @@ type Token struct {
 	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
+type ConversionMetrics struct {
+	Sent            int64 `json:"sent"`
+	Clicked         int64 `json:"clicked"`
+	CheckoutStarted int64 `json:"checkout_started"`
+	Paid            int64 `json:"paid"`
+	Failed          int64 `json:"failed"`
+	Expired         int64 `json:"expired"`
+}
+
 type CreateAttemptParams struct {
 	UserID         uuid.UUID
 	SubscriptionID uuid.UUID
