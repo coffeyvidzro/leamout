@@ -3,7 +3,6 @@ package dunning
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 	"time"
 
@@ -38,6 +37,7 @@ func TestOpenRecoveryLinkRejectsExpiredToken(t *testing.T) {
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected expired dunning token to return ErrNotFound, got %v", err)
 	}
+	assertNoCheckoutCreatedForAttempt(t, fixture.Pool, fixture.Attempt.ID)
 
 	stored, err := fixture.Service.GetByToken(context.Background(), rawToken)
 	if err != nil {
@@ -63,6 +63,7 @@ func TestOpenRecoveryLinkRejectsRevokedToken(t *testing.T) {
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected revoked dunning token to return ErrNotFound, got %v", err)
 	}
+	assertNoCheckoutCreatedForAttempt(t, fixture.Pool, fixture.Attempt.ID)
 
 	stored, err := fixture.Service.GetByToken(context.Background(), rawToken)
 	if err != nil {
@@ -89,6 +90,7 @@ func TestCreateTokenRejectsDuplicateActiveTokenForAttempt(t *testing.T) {
 	if !errors.Is(err, ErrActiveTokenExists) {
 		t.Fatalf("expected duplicate active dunning token to return ErrActiveTokenExists, got %v", err)
 	}
+	assertNoCheckoutCreatedForAttempt(t, fixture.Pool, fixture.Attempt.ID)
 }
 
 func TestOpenRecoveryLinkRejectsMalformedToken(t *testing.T) {
@@ -98,6 +100,7 @@ func TestOpenRecoveryLinkRejectsMalformedToken(t *testing.T) {
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected malformed dunning token to return ErrNotFound, got %v", err)
 	}
+	assertNoCheckoutCreatedForAttempt(t, fixture.Pool, fixture.Attempt.ID)
 }
 
 func createDunningTokenSafetyFixture(t *testing.T) dunningTokenSafetyFixture {
@@ -208,7 +211,7 @@ func assertNoCheckoutCreatedForAttempt(t *testing.T, pool *pgxpool.Pool, attempt
 	if err := pool.QueryRow(ctx, `
 SELECT COUNT(*)
 FROM checkout_sessions
-WHERE metadata->>'dunning_attempt_id' = $1`, fmt.Sprint(attemptID)).Scan(&count); err != nil {
+WHERE metadata->>'dunning_attempt_id' = $1`, attemptID.String()).Scan(&count); err != nil {
 		t.Fatalf("count recovery checkout sessions: %v", err)
 	}
 	if count != 0 {
