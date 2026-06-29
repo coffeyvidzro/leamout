@@ -18,6 +18,7 @@ import (
 	"github.com/cuffeyvidzro/leamout/internal/modules/product"
 	"github.com/cuffeyvidzro/leamout/internal/modules/subscription"
 	"github.com/cuffeyvidzro/leamout/internal/sms"
+	dunningworkflow "github.com/cuffeyvidzro/leamout/internal/workflows/dunning"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
@@ -101,8 +102,8 @@ func TestRenewalDunningEndToEnd(t *testing.T) {
 	}
 
 	sender := &recordingSMSSender{}
-	worker := NewSendReminderWorker(dunningService, sender, "https://lmt.test", nil)
-	if err := worker.Work(ctx, &river.Job[SendReminderArgs]{Args: SendReminderArgs{
+	worker := dunningworkflow.NewSendReminderWorker(dunningService, sender, "https://lmt.test", nil)
+	if err := worker.Work(ctx, &river.Job[dunningworkflow.SendReminderArgs]{Args: dunningworkflow.SendReminderArgs{
 		UserID:           candidate.UserID,
 		SubscriptionID:   candidate.ID,
 		CustomerID:       *candidate.CustomerID,
